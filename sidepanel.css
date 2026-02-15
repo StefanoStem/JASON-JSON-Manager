@@ -283,7 +283,7 @@ body {
   flex-shrink: 0;
   width: 36px;
   padding: 12px 8px 12px 12px;
-  font-family: ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, Consolas, monospace;
+  font-family: ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, Consolas, 'Courier New', monospace;
   font-size: 13px;
   line-height: 1.5;
   color: var(--text-secondary);
@@ -306,8 +306,9 @@ body {
   overflow: hidden;
 }
 
-.editor-highlight,
+/* Single contenteditable editor - no overlay */
 .editor {
+  display: block;
   position: absolute;
   top: 0;
   left: 0;
@@ -315,68 +316,73 @@ body {
   bottom: 0;
   margin: 0;
   padding: 12px;
-  font-family: Consolas, Monaco, 'Courier New', monospace;
+  font-family: ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, Consolas, 'Courier New', monospace;
   font-size: 13px;
   line-height: 1.5;
   letter-spacing: normal;
   white-space: pre;
-  tab-size: 4;
-  -moz-tab-size: 4;
+  tab-size: 2;
+  -moz-tab-size: 2;
   border: none;
   box-sizing: border-box;
   overflow: auto;
   overflow-wrap: normal;
-  scrollbar-width: none;
+  background: #2d2d2d;
+  color: #ccc;
+  caret-color: #fff;
+  outline: none;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-.editor {
-  -webkit-appearance: none;
-  appearance: none;
-}
-
-.editor-highlight::-webkit-scrollbar,
 .editor::-webkit-scrollbar {
-  display: none;
+  width: 6px;
+  height: 6px;
 }
 
-.editor-highlight {
-  pointer-events: none;
-  background: #2d2d2d;
-  padding: 12px !important;
-  font-size: 13px !important;
+.editor::-webkit-scrollbar-thumb {
+  background: #555;
+  border-radius: 3px;
 }
 
-.editor-highlight code {
+pre.editor code,
+pre.editor code[class*="language-"] {
   font-family: inherit;
-  font-size: 13px !important;
-  line-height: 1.5;
+  font-size: inherit;
+  line-height: inherit;
+  letter-spacing: inherit;
+  tab-size: inherit;
+  -moz-tab-size: inherit;
   padding: 0;
   margin: 0;
   background: none;
   white-space: pre;
+  display: block;
 }
 
-.editor-highlight .token {
+.editor .token {
   display: inline;
-}
-
-.editor {
-  color: transparent;
-  caret-color: #ccc;
-  background: transparent;
-  resize: none;
-  outline: none;
-}
-
-.editor::placeholder {
-  color: var(--text-secondary);
-  opacity: 0.7;
 }
 
 .editor:focus {
   outline: none;
+}
+
+/* Placeholder for empty editor */
+.editor-placeholder {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  color: var(--text-secondary);
+  opacity: 0.6;
+  pointer-events: none;
+  font-family: ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, Consolas, 'Courier New', monospace;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.editor-placeholder.hidden {
+  display: none;
 }
 
 .editor-wrapper:focus-within {

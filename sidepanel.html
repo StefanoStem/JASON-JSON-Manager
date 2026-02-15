@@ -4,8 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>JASON - JSON Snippet Manager</title>
-  <link rel="stylesheet" href="sidepanel.css">
   <link rel="stylesheet" href="prism-tomorrow.css">
+  <link rel="stylesheet" href="sidepanel.css">
 </head>
 <body>
   <div class="app">
@@ -30,14 +30,8 @@
           <div class="editor-wrapper">
             <div class="line-numbers" id="lineNumbers" aria-hidden="true"></div>
             <div class="editor-area">
-              <pre class="editor-highlight language-json" id="editorHighlight" aria-hidden="true"><code class="language-json" id="editorCode"></code></pre>
-              <textarea 
-                class="editor" 
-                id="editor" 
-                placeholder="Paste or type your JSON snippet here..."
-                spellcheck="false"
-                wrap="off"
-              ></textarea>
+              <pre class="editor" id="editor" contenteditable="true" spellcheck="false"><code class="language-json" id="editorCode"></code></pre>
+              <div class="editor-placeholder" id="editorPlaceholder">Paste or type your JSON snippet here...</div>
             </div>
           </div>
           <div class="validation" id="validation"></div>
