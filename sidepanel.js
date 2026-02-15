@@ -163,19 +163,46 @@ function updatePlaceholder(text) {
 // ─── Storage ────────────────────────────────────────────────
 
 async function saveTabs() {
-  await chrome.storage.local.set({ tabs });
+  try {
+    await chrome.storage.local.set({ tabs });
+  } catch (err) {
+    console.error('Failed to save tabs:', err);
+  }
 }
 
 async function loadTabs() {
-  const result = await chrome.storage.local.get('tabs');
-  tabs = (result.tabs || []).map((t) => ({
-    id: t.id,
-    content: t.content || '',
-    title: t.title || ''
-  }));
+  try {
+    const result = await chrome.storage.local.get('tabs');
+    tabs = (result.tabs || [])
+      .filter((t) => t && typeof t.id === 'string')
+      .map((t) => ({
+        id: t.id,
+        content: typeof t.content === 'string' ? t.content : '',
+        title: typeof t.title === 'string' ? t.title : ''
+      }));
+  } catch (err) {
+    console.error('Failed to load tabs:', err);
+    tabs = [];
+  }
   if (tabs.length === 0) {
     tabs = [{ id: generateId(), content: '', title: '' }];
     await saveTabs();
+  }
+}
+
+/**
+ * Flush the current editor content to the active tab and cancel pending timers.
+ * Call before any tab switch, add, or delete to prevent data loss.
+ */
+function flushActiveTab() {
+  clearTimeout(debounceTimer);
+  clearTimeout(highlightTimer);
+  debounceTimer = null;
+  highlightTimer = null;
+
+  if (activeTabId) {
+    const cur = tabs.find((t) => t.id === activeTabId);
+    if (cur) cur.content = getEditorText();
   }
 }
 
@@ -186,8 +213,10 @@ function renderTabs() {
 
   tabs.forEach((tab) => {
     const tabEl = document.createElement('div');
-    tabEl.className = 'tab' + (tab.id === activeTabId ? ' active' : '');
+    const isActive = tab.id === activeTabId;
+    tabEl.className = 'tab' + (isActive ? ' active' : '');
     tabEl.setAttribute('role', 'tab');
+    tabEl.setAttribute('aria-selected', isActive ? 'true' : 'false');
     tabEl.setAttribute('data-id', tab.id);
 
     const labelEl = document.createElement('span');
@@ -258,11 +287,7 @@ function startEditTabTitle(tab, labelEl) {
 // ─── Tab operations ─────────────────────────────────────────
 
 function switchTab(id) {
-  // Save current content before switching
-  if (activeTabId) {
-    const cur = tabs.find((t) => t.id === activeTabId);
-    if (cur) cur.content = getEditorText();
-  }
+  flushActiveTab();
 
   activeTabId = id;
   const tab = tabs.find((t) => t.id === id);
@@ -283,6 +308,8 @@ function switchTab(id) {
 async function addTab(initialContent = '') {
   if (tabs.length >= MAX_TABS) return;
 
+  flushActiveTab();
+
   const newTab = { id: generateId(), content: initialContent || '', title: '' };
   tabs.push(newTab);
   activeTabId = newTab.id;
@@ -302,6 +329,8 @@ async function addTab(initialContent = '') {
 async function deleteTab(id) {
   const index = tabs.findIndex((t) => t.id === id);
   if (index === -1) return;
+
+  flushActiveTab();
 
   tabs.splice(index, 1);
 

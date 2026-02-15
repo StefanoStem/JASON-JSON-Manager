@@ -444,7 +444,7 @@ pre.editor code[class*="language-"] {
   color: var(--text-primary);
 }
 
-.btn-format:hover {
+.btn-format:hover:not(:disabled) {
   background: var(--accent);
   color: white;
 }
