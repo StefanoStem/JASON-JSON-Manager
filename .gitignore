@@ -9,8 +9,7 @@ Thumbs.db
 *.swo
 *~
 
-# Build output
-build/
+# Packaging output
 dist/
 *.crx
 *.xpi

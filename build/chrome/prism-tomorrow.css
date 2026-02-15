@@ -1,0 +1,32 @@
+/* Prism Tomorrow theme - dark friendly */
+code[class*="language-"], pre[class*="language-"] {
+  color: #ccc;
+  background: none;
+  font-family: Consolas, Monaco, 'Andale Mono', 'Ubuntu Mono', monospace;
+  font-size: 1em;
+  text-align: left;
+  white-space: pre;
+  word-spacing: normal;
+  word-break: normal;
+  word-wrap: normal;
+  line-height: 1.5;
+  tab-size: 4;
+  hyphens: none;
+}
+
+pre[class*="language-"] {
+  margin: 0;
+}
+
+:not(pre) > code[class*="language-"], pre[class*="language-"] {
+  background: #2d2d2d;
+}
+
+.token.comment, .token.prolog, .token.doctype, .token.cdata { color: #999; }
+.token.punctuation { color: #ccc; }
+.token.property, .token.tag, .token.boolean, .token.number, .token.constant, .token.symbol { color: #f08d49; }
+.token.selector, .token.attr-name, .token.string, .token.char, .token.builtin, .token.inserted { color: #7ec699; }
+.token.operator, .token.entity, .token.url, .token.variable { color: #67cdcc; }
+.token.atrule, .token.attr-value, .token.keyword { color: #cc99cd; }
+.token.function, .token.class-name { color: #dd4a68; }
+.token.regex, .token.important { color: #e90; }
