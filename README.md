@@ -1,10 +1,10 @@
 # JASON (JSON Manager)
 
-A Chrome extension for quickly saving and managing JSON snippets in a sidebar. Perfect for developers who frequently copy JSON between tools, APIs, and documentation.
+A browser extension for quickly saving and managing JSON snippets in a sidebar. Works on **Chrome** and **Firefox**. Perfect for developers who frequently copy JSON between tools, APIs, and documentation.
 
 ## Features
 
-- **Side Panel** – Opens as a resizable side panel when you click the extension icon
+- **Side Panel / Sidebar** – Opens as a resizable panel when you click the extension icon
 - **Tab System** – Up to 20 tabs, each holding one snippet with editable titles
 - **Syntax Highlighting** – JSON syntax coloring via Prism.js (Tomorrow theme)
 - **Line Numbers** – Line numbers on the left for easy reference
@@ -13,20 +13,37 @@ A Chrome extension for quickly saving and managing JSON snippets in a sidebar. P
 - **Copy & Clear** – Quick copy to clipboard and clear buttons
 - **Drag & Drop** – Drop text anywhere in the content area to add it to the current tab
 - **Paste** – Paste into the content area to add text to the current tab
-- **Auto-save** – Content saves automatically (500ms debounce) to `chrome.storage.local`
+- **Auto-save** – Content saves automatically (500ms debounce) to local storage
 - **Dark Theme** – Dark-friendly editor styling
+
+## Building
+
+The shared source lives in the project root. A build script produces browser-specific packages:
+
+```bash
+./build.sh
+```
+
+This creates:
+- `build/chrome/` – ready to load in Chrome
+- `build/firefox/` – ready to load in Firefox
 
 ## Installation
 
-1. Clone or download this repository
-2. Open Chrome and go to `chrome://extensions`
+### Chrome
+1. Run `./build.sh`
+2. Open Chrome → `chrome://extensions`
 3. Enable **Developer mode** (toggle in top-right)
-4. Click **Load unpacked**
-5. Select the `jason-extension` folder
+4. Click **Load unpacked** → select the `build/chrome` folder
+
+### Firefox
+1. Run `./build.sh`
+2. Open Firefox → `about:debugging#/runtime/this-firefox`
+3. Click **Load Temporary Add-on…** → select any file inside `build/firefox` (e.g. `manifest.json`)
 
 ## Usage
 
-- **Open panel** – Click the JASON icon in the toolbar
+- **Open panel** – Click the JASON icon in the toolbar (Chrome: side panel; Firefox: sidebar)
 - **Add tab** – Click "+ New Tab" or drop/paste text into the content area
 - **Switch tabs** – Click a tab to switch; click the tab label (when active) to rename it
 - **Delete tab** – Click × on a tab
@@ -35,8 +52,8 @@ A Chrome extension for quickly saving and managing JSON snippets in a sidebar. P
 
 ## Tech Stack
 
-- Manifest V3
-- Chrome Side Panel API
+- Chrome: Manifest V3 + Side Panel API
+- Firefox: Manifest V2 + Sidebar Action API
 - Pure HTML/CSS/JavaScript (no frameworks)
 - [Prism.js](https://prismjs.com/) for syntax highlighting
 

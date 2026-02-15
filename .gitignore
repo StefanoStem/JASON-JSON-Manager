@@ -9,8 +9,10 @@ Thumbs.db
 *.swo
 *~
 
-# Build / package (if you ever add a build step)
+# Build output
+build/
 dist/
 *.crx
+*.xpi
 *.zip
 *.pem
