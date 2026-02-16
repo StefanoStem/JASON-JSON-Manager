@@ -307,8 +307,10 @@ body {
   overflow: hidden;
 }
 
-/* Single contenteditable editor - no overlay */
-.editor {
+/* Single contenteditable editor - no overlay
+   Uses pre.editor (0,1,1) to beat Prism's pre[class*="language-"] (0,1,1)
+   via cascade order (this file loads after prism-tomorrow.css). */
+pre.editor {
   display: block;
   position: absolute;
   top: 0;
@@ -336,12 +338,12 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-.editor::-webkit-scrollbar {
+pre.editor::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 
-.editor::-webkit-scrollbar-thumb {
+pre.editor::-webkit-scrollbar-thumb {
   background: #555;
   border-radius: 3px;
 }
@@ -361,11 +363,11 @@ pre.editor code[class*="language-"] {
   display: block;
 }
 
-.editor .token {
+pre.editor .token {
   display: inline;
 }
 
-.editor:focus {
+pre.editor:focus {
   outline: none;
 }
 

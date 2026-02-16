@@ -58,11 +58,20 @@ function getEditorText() {
   return editor.innerText || '';
 }
 
+/** Remove any text nodes (or other nodes) in the <pre> that are not the <code> element.
+ *  Prevents duplicate/ghost content when execCommand or browser inserts into the pre. */
+function clearEditorGhostNodes() {
+  Array.from(editor.childNodes).forEach((n) => {
+    if (n !== editorCode) n.remove();
+  });
+}
+
 /**
  * Set editor content as plain text (no highlighting).
  */
 function setEditorTextPlain(text) {
   editorCode.textContent = text;
+  clearEditorGhostNodes();
   updatePlaceholder(text);
 }
 
@@ -80,6 +89,7 @@ function setEditorTextHighlighted(text) {
   } else {
     editorCode.textContent = text;
   }
+  clearEditorGhostNodes();
   updatePlaceholder(text);
 }
 
@@ -99,6 +109,7 @@ function reHighlight() {
   } catch {
     editorCode.textContent = text;
   }
+  clearEditorGhostNodes();
 
   // Restore cursor
   if (offset >= 0) {
@@ -441,8 +452,26 @@ function onEditorKeydown(e) {
 
 function onEditorPaste(e) {
   e.preventDefault();
-  const text = e.clipboardData?.getData('text/plain') || '';
-  document.execCommand('insertText', false, text);
+  const pastedText = e.clipboardData?.getData('text/plain') || '';
+  if (!pastedText) return;
+
+  // Replace content in one place (code element only). Do not use execCommand:
+  // it can insert into the <pre> as a sibling of <code>, causing duplicate text.
+  const currentText = getEditorText();
+  let offset = getCaretCharOffset(editor);
+  if (offset < 0) offset = currentText.length;
+  const newText = currentText.slice(0, offset) + pastedText + currentText.slice(offset);
+
+  clearTimeout(highlightTimer);
+  highlightTimer = null;
+
+  setEditorTextHighlighted(newText);
+  updateLineNumbers();
+  const result = validateJson();
+  formatBtn.disabled = !result.valid;
+
+  const newOffset = offset + pastedText.length;
+  if (newOffset >= 0) setCaretCharOffset(editorCode, newOffset);
 }
 
 // ─── Actions ────────────────────────────────────────────────
