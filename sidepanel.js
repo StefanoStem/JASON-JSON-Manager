@@ -79,10 +79,17 @@ function setEditorTextPlain(text) {
  * Set editor content with Prism syntax highlighting.
  * Use when cursor position doesn't matter (load, switch, format, clear).
  */
+function safeSetHTML(element, html) {
+  const template = document.createElement('template');
+  template.innerHTML = html;
+  element.textContent = '';
+  element.appendChild(template.content);
+}
+
 function setEditorTextHighlighted(text) {
   if (text.trim()) {
     try {
-      editorCode.innerHTML = Prism.highlight(text, Prism.languages.json, 'json');
+      safeSetHTML(editorCode, Prism.highlight(text, Prism.languages.json, 'json'));
     } catch {
       editorCode.textContent = text;
     }
@@ -105,7 +112,7 @@ function reHighlight() {
   const offset = getCaretCharOffset(editorCode);
 
   try {
-    editorCode.innerHTML = Prism.highlight(text, Prism.languages.json, 'json');
+    safeSetHTML(editorCode, Prism.highlight(text, Prism.languages.json, 'json'));
   } catch {
     editorCode.textContent = text;
   }
@@ -220,7 +227,7 @@ function flushActiveTab() {
 // ─── Tabs ───────────────────────────────────────────────────
 
 function renderTabs() {
-  tabsContainer.innerHTML = '';  tabs.forEach((tab) => {
+  tabsContainer.textContent = '';  tabs.forEach((tab) => {
     const tabEl = document.createElement('div');
     const isActive = tab.id === activeTabId;
     tabEl.className = 'tab' + (isActive ? ' active' : '');
@@ -373,7 +380,7 @@ function updateLineNumbers() {
   const text = getEditorText();
   const lines = text.split('\n');
   const count = Math.max(1, lines.length);
-  lineNumbers.innerHTML = Array.from({ length: count }, (_, i) => i + 1).join('\n');
+  lineNumbers.textContent = Array.from({ length: count }, (_, i) => i + 1).join('\n');
 }
 
 // ─── Validation ─────────────────────────────────────────────
