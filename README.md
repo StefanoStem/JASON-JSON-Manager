@@ -25,21 +25,21 @@ The shared source lives in the project root. A build script produces browser-spe
 ```
 
 This creates:
-- `build/chrome/` – ready to load in Chrome
-- `build/firefox/` – ready to load in Firefox
+- `build/chrome/` – unpacked extension for Chrome
+- `build/firefox/` – unpacked extension for Firefox
+- `build/jason-chrome.zip` – ready to upload to Chrome Web Store
+- `build/jason-firefox.zip` – ready to upload to Firefox Add-ons (AMO)
 
 ## Installation
 
 ### Chrome
-1. Run `./build.sh`
-2. Open Chrome → `chrome://extensions`
-3. Enable **Developer mode** (toggle in top-right)
-4. Click **Load unpacked** → select the `build/chrome` folder
+1. Open Chrome → `chrome://extensions`
+2. Enable **Developer mode** (toggle in top-right)
+3. Click **Load unpacked** → select the `build/chrome` folder
 
 ### Firefox
-1. Run `./build.sh`
-2. Open Firefox → `about:debugging#/runtime/this-firefox`
-3. Click **Load Temporary Add-on…** → select any file inside `build/firefox` (e.g. `manifest.json`)
+1. Open Firefox → `about:debugging#/runtime/this-firefox`
+2. Click **Load Temporary Add-on…** → select `build/firefox/manifest.json`
 
 ## Usage
 

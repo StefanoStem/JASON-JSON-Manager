@@ -34,4 +34,11 @@ cp "$ROOT/backgrounds/firefox.js"  "$BUILD/firefox/background.js"
 for f in "${SHARED[@]}"; do cp -r "$ROOT/$f" "$BUILD/firefox/"; done
 echo "  → build/firefox/"
 
+# ── Create zip files (manifest.json at the root of the archive) ──
+echo "Creating zip files..."
+(cd "$BUILD/chrome"  && zip -r -q "$BUILD/jason-chrome.zip" .)
+echo "  → build/jason-chrome.zip"
+(cd "$BUILD/firefox" && zip -r -q "$BUILD/jason-firefox.zip" .)
+echo "  → build/jason-firefox.zip"
+
 echo "Done."
