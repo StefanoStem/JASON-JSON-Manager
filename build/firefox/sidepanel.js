@@ -80,10 +80,11 @@ function setEditorTextPlain(text) {
  * Use when cursor position doesn't matter (load, switch, format, clear).
  */
 function safeSetHTML(element, html) {
-  const template = document.createElement('template');
-  template.innerHTML = html;
+  const doc = new DOMParser().parseFromString(html, 'text/html');
   element.textContent = '';
-  element.appendChild(template.content);
+  while (doc.body.firstChild) {
+    element.appendChild(doc.body.firstChild);
+  }
 }
 
 function setEditorTextHighlighted(text) {
