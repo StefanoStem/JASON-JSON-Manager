@@ -286,6 +286,7 @@ body {
   font-family: ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, Consolas, 'Courier New', monospace;
   font-size: 13px;
   line-height: 1.5;
+  white-space: pre;
   color: var(--text-secondary);
   background: #252525;
   overflow-y: auto;
