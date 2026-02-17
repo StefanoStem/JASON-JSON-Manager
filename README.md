@@ -1,69 +1,77 @@
-# JASON (JSON Manager)
+<p align="center">
+  <img src="icons/icon128.png" alt="JASON icon" width="96" height="96">
+</p>
 
-A browser extension for quickly saving and managing JSON snippets in a sidebar. Works on **Chrome**, **Firefox**, and **Edge**. Perfect for developers who frequently copy JSON between tools, APIs, and documentation.
+<h1 align="center">JASON</h1>
+
+<p align="center">
+  A browser sidebar for saving and managing JSON snippets.<br>
+  Available for <strong>Chrome</strong> and <strong>Firefox</strong>.
+</p>
+
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="MIT License"></a>
+  <img src="https://img.shields.io/badge/manifest-v3-blue.svg" alt="Manifest V3">
+  <img src="https://img.shields.io/badge/no_frameworks-vanilla_JS-orange.svg" alt="Vanilla JS">
+</p>
+
+---
 
 ## Features
 
-- **Side Panel / Sidebar** – Opens as a resizable panel when you click the extension icon
-- **Tab System** – Up to 20 tabs, each holding one snippet with editable titles
-- **Syntax Highlighting** – JSON syntax coloring via Prism.js (Tomorrow theme)
-- **Line Numbers** – Line numbers on the left for easy reference
-- **JSON Validation** – Live validation with "Valid JSON" / "Not valid JSON" indicator
-- **Format** – One-click formatting with 2-space indentation (when JSON is valid)
-- **Copy & Clear** – Quick copy to clipboard and clear buttons
-- **Drag & Drop** – Drop text anywhere in the content area to add it to the current tab
-- **Paste** – Paste into the content area to add text to the current tab
-- **Auto-save** – Content saves automatically (500ms debounce) to local storage
-- **Dark Theme** – Dark-friendly editor styling
+- **Sidebar editor** -- opens alongside your current page, one click away
+- **Tabs** -- up to 20 tabs with editable names, each holding a separate snippet
+- **Syntax highlighting** -- color-coded JSON via [Prism.js](https://prismjs.com/)
+- **Live validation** -- instant feedback as you type
+- **Format** -- pretty-print with 2-space indentation
+- **Line numbers** -- synced scrolling with the editor
+- **Copy / Clear** -- one-click clipboard copy and clear
+- **Drag & drop** -- drop text from any page into the editor
+- **Auto-save** -- all content persists across browser sessions
+- **Privacy first** -- no data collection, no network requests, everything stays local
 
-## Building
+## Install
 
-The shared source lives in the project root. A build script produces browser-specific packages:
+### Chrome
+1. Go to `chrome://extensions`
+2. Enable **Developer mode**
+3. Click **Load unpacked** and select `build/chrome`
+
+### Firefox
+1. Go to `about:debugging#/runtime/this-firefox`
+2. Click **Load Temporary Add-on** and select `build/firefox/manifest.json`
+
+## Build from source
 
 ```bash
+git clone https://github.com/StefanoStem/JASON-JSON-Manager.git
+cd JASON-JSON-Manager
 ./build.sh
 ```
 
-This creates:
-- `build/chrome/` – unpacked extension for Chrome
-- `build/firefox/` – unpacked extension for Firefox
-- `build/edge/` – unpacked extension for Edge
-- `build/jason-chrome.zip` – ready to upload to Chrome Web Store
-- `build/jason-firefox.zip` – ready to upload to Firefox Add-ons (AMO)
-- `build/jason-edge.zip` – ready to upload to Edge Add-ons
+This produces:
 
-## Installation
+| Output | Purpose |
+|---|---|
+| `build/chrome/` | Unpacked extension for Chrome |
+| `build/firefox/` | Unpacked extension for Firefox |
+| `build/jason-chrome.zip` | Upload to Chrome Web Store |
+| `build/jason-firefox.zip` | Upload to Firefox Add-ons |
 
-### Chrome
-1. Open Chrome → `chrome://extensions`
-2. Enable **Developer mode** (toggle in top-right)
-3. Click **Load unpacked** → select the `build/chrome` folder
+## How it works
 
-### Firefox
-1. Open Firefox → `about:debugging#/runtime/this-firefox`
-2. Click **Load Temporary Add-on…** → select `build/firefox/manifest.json`
+The shared source (`sidepanel.js`, `sidepanel.html`, `sidepanel.css`) lives in the project root. `build.sh` copies it alongside browser-specific manifests and background scripts into each build folder. No bundlers, no transpilers -- just a copy.
 
-### Edge
-1. Open Edge → `edge://extensions`
-2. Enable **Developer mode** (toggle in bottom-left)
-3. Click **Load unpacked** → select the `build/edge` folder
+| | Chrome | Firefox |
+|---|---|---|
+| Manifest | V3 | V2 |
+| Sidebar API | `chrome.sidePanel` | `browser.sidebarAction` |
+| Storage | `chrome.storage.local` | `chrome.storage.local` |
 
-## Usage
+## Privacy
 
-- **Open panel** – Click the JASON icon in the toolbar (Chrome: side panel; Firefox: sidebar)
-- **Add tab** – Click "+ New Tab" or drop/paste text into the content area
-- **Switch tabs** – Click a tab to switch; click the tab label (when active) to rename it
-- **Delete tab** – Click × on a tab
-- **Format JSON** – Click Format (enabled when JSON is valid)
-- **Copy** – Copy the current snippet to clipboard
-
-## Tech Stack
-
-- Chrome/Edge: Manifest V3 + Side Panel API
-- Firefox: Manifest V2 + Sidebar Action API
-- Pure HTML/CSS/JavaScript (no frameworks)
-- [Prism.js](https://prismjs.com/) for syntax highlighting
+JASON makes **zero network requests**. All data is stored locally in your browser. See [PRIVACY.md](PRIVACY.md) for the full policy.
 
 ## License
 
-MIT License – see [LICENSE](LICENSE) for details.
+[MIT](LICENSE)
