@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build JASON extension for Chrome and Firefox
+# Build JASON extension for Chrome, Firefox, and Edge
 set -e
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
@@ -34,11 +34,22 @@ cp "$ROOT/backgrounds/firefox.js"  "$BUILD/firefox/background.js"
 for f in "${SHARED[@]}"; do cp -r "$ROOT/$f" "$BUILD/firefox/"; done
 echo "  → build/firefox/"
 
+# ── Edge ──────────────────────────────────────────────────────
+echo "Building Edge..."
+rm -rf "$BUILD/edge"
+mkdir -p "$BUILD/edge"
+cp "$ROOT/manifests/edge.json" "$BUILD/edge/manifest.json"
+cp "$ROOT/backgrounds/edge.js"  "$BUILD/edge/background.js"
+for f in "${SHARED[@]}"; do cp -r "$ROOT/$f" "$BUILD/edge/"; done
+echo "  → build/edge/"
+
 # ── Create zip files (manifest.json at the root of the archive) ──
 echo "Creating zip files..."
 (cd "$BUILD/chrome"  && zip -r -q "$BUILD/jason-chrome.zip" .)
 echo "  → build/jason-chrome.zip"
 (cd "$BUILD/firefox" && zip -r -q "$BUILD/jason-firefox.zip" .)
 echo "  → build/jason-firefox.zip"
+(cd "$BUILD/edge"    && zip -r -q "$BUILD/jason-edge.zip" .)
+echo "  → build/jason-edge.zip"
 
 echo "Done."

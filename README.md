@@ -1,6 +1,6 @@
 # JASON (JSON Manager)
 
-A browser extension for quickly saving and managing JSON snippets in a sidebar. Works on **Chrome** and **Firefox**. Perfect for developers who frequently copy JSON between tools, APIs, and documentation.
+A browser extension for quickly saving and managing JSON snippets in a sidebar. Works on **Chrome**, **Firefox**, and **Edge**. Perfect for developers who frequently copy JSON between tools, APIs, and documentation.
 
 ## Features
 
@@ -27,8 +27,10 @@ The shared source lives in the project root. A build script produces browser-spe
 This creates:
 - `build/chrome/` – unpacked extension for Chrome
 - `build/firefox/` – unpacked extension for Firefox
+- `build/edge/` – unpacked extension for Edge
 - `build/jason-chrome.zip` – ready to upload to Chrome Web Store
 - `build/jason-firefox.zip` – ready to upload to Firefox Add-ons (AMO)
+- `build/jason-edge.zip` – ready to upload to Edge Add-ons
 
 ## Installation
 
@@ -41,6 +43,11 @@ This creates:
 1. Open Firefox → `about:debugging#/runtime/this-firefox`
 2. Click **Load Temporary Add-on…** → select `build/firefox/manifest.json`
 
+### Edge
+1. Open Edge → `edge://extensions`
+2. Enable **Developer mode** (toggle in bottom-left)
+3. Click **Load unpacked** → select the `build/edge` folder
+
 ## Usage
 
 - **Open panel** – Click the JASON icon in the toolbar (Chrome: side panel; Firefox: sidebar)
@@ -52,7 +59,7 @@ This creates:
 
 ## Tech Stack
 
-- Chrome: Manifest V3 + Side Panel API
+- Chrome/Edge: Manifest V3 + Side Panel API
 - Firefox: Manifest V2 + Sidebar Action API
 - Pure HTML/CSS/JavaScript (no frameworks)
 - [Prism.js](https://prismjs.com/) for syntax highlighting
