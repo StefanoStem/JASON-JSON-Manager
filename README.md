@@ -72,6 +72,12 @@ The shared source (`sidepanel.js`, `sidepanel.html`, `sidepanel.css`) lives in t
 
 JASON makes **zero network requests**. All data is stored locally in your browser. See [PRIVACY.md](PRIVACY.md) for the full policy.
 
+## Support
+
+If you find JASON useful, you can support its development:
+
+[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-donate-yellow)](https://buymeacoffee.com/stemtest197)
+
 ## License
 
 [MIT](LICENSE)
