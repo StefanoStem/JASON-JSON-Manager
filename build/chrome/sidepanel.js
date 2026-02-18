@@ -50,16 +50,61 @@ function getTabLabel(tab) {
 // ─── Editor text helpers ────────────────────────────────────
 
 /**
- * Get the plain text from the contenteditable editor.
- * Uses innerText which preserves newlines from <br> and block elements.
+ * Recursively extract text from a DOM node, treating <br> as \n.
+ * Unlike innerText, this does not add newlines for display:block boundaries.
  */
-function getEditorText() {
-  // innerText respects visual line breaks
-  return editor.innerText || '';
+function extractText(node) {
+  if (node.nodeType === Node.TEXT_NODE) return node.textContent;
+  if (node.nodeName === 'BR') return '\n';
+  let text = '';
+  for (const child of node.childNodes) text += extractText(child);
+  return text;
 }
 
-/** Remove any text nodes (or other nodes) in the <pre> that are not the <code> element.
- *  Prevents duplicate/ghost content when execCommand or browser inserts into the pre. */
+/**
+ * Merge any ghost nodes (siblings of <code> inside <pre>) into editorCode,
+ * preserving cursor position. Called before reading text to ensure all
+ * content lives inside <code>.
+ */
+function consolidateGhostNodes() {
+  const children = Array.from(editor.childNodes);
+  const ghosts = children.filter(n => n !== editorCode);
+  if (ghosts.length === 0) return;
+
+  let cursorOffset = -1;
+  try {
+    const sel = window.getSelection();
+    if (sel.rangeCount && editor.contains(sel.getRangeAt(0).startContainer)) {
+      const range = sel.getRangeAt(0);
+      const preRange = range.cloneRange();
+      preRange.selectNodeContents(editor);
+      preRange.setEnd(range.startContainer, range.startOffset);
+      cursorOffset = extractText(preRange.cloneContents()).length;
+    }
+  } catch (e) { /* ignore range errors */ }
+
+  let fullText = '';
+  for (const child of children) fullText += extractText(child);
+
+  editorCode.textContent = fullText;
+  ghosts.forEach(n => n.remove());
+
+  if (cursorOffset >= 0) {
+    setCaretCharOffset(editorCode, Math.min(cursorOffset, fullText.length));
+  }
+}
+
+/**
+ * Get the plain text from the contenteditable editor.
+ * Consolidates ghost nodes first, then reads from editorCode.textContent
+ * (avoids display:block boundary newlines that editor.innerText produces).
+ */
+function getEditorText() {
+  consolidateGhostNodes();
+  return editorCode.textContent || '';
+}
+
+/** Remove any nodes in the <pre> that are not the <code> element. */
 function clearEditorGhostNodes() {
   Array.from(editor.childNodes).forEach((n) => {
     if (n !== editorCode) n.remove();
@@ -97,8 +142,22 @@ function setEditorTextHighlighted(text) {
   } else {
     editorCode.textContent = text;
   }
+  appendTrailingBR(text);
   clearEditorGhostNodes();
   updatePlaceholder(text);
+}
+
+/**
+ * In contenteditable <pre>, a trailing \n at the end of content is visually
+ * collapsed — the browser won't render the cursor on the new line. Appending
+ * a sentinel <br> gives the browser an anchor so the cursor appears correctly.
+ * <br> is invisible to textContent and Range.toString(), so it doesn't affect
+ * text reading or offset calculations.
+ */
+function appendTrailingBR(text) {
+  if (text.endsWith('\n')) {
+    editorCode.appendChild(document.createElement('br'));
+  }
 }
 
 /**
@@ -109,7 +168,6 @@ function reHighlight() {
   const text = getEditorText();
   if (!text.trim()) return;
 
-  // Save cursor offset
   const offset = getCaretCharOffset(editorCode);
 
   try {
@@ -117,9 +175,9 @@ function reHighlight() {
   } catch {
     editorCode.textContent = text;
   }
+  appendTrailingBR(text);
   clearEditorGhostNodes();
 
-  // Restore cursor
   if (offset >= 0) {
     setCaretCharOffset(editorCode, offset);
   }
@@ -442,17 +500,50 @@ function onEditorInput() {
 
 // ─── Key handlers for contenteditable ───────────────────────
 
+/**
+ * Insert text at the current cursor position using direct text manipulation.
+ * Avoids execCommand which splits <code> elements and creates ghost nodes.
+ */
+function insertAtCursor(chars) {
+  const text = getEditorText();
+  let offset = getCaretCharOffset(editorCode);
+  if (offset < 0) offset = text.length;
+
+  const newText = text.slice(0, offset) + chars + text.slice(offset);
+
+  clearTimeout(highlightTimer);
+  clearTimeout(debounceTimer);
+  highlightTimer = null;
+
+  setEditorTextHighlighted(newText);
+  setCaretCharOffset(editorCode, offset + chars.length);
+
+  updatePlaceholder(newText);
+  updateLineNumbers();
+  const result = validateJson();
+  formatBtn.disabled = !result.valid;
+
+  debounceTimer = setTimeout(() => {
+    if (activeTabId) {
+      const tab = tabs.find((t) => t.id === activeTabId);
+      if (tab) {
+        tab.content = getEditorText();
+        saveTabs();
+        renderTabs();
+      }
+    }
+  }, DEBOUNCE_MS);
+}
+
 function onEditorKeydown(e) {
-  // Enter: insert \n (prevent browser from inserting <br> or <div>)
   if (e.key === 'Enter') {
     e.preventDefault();
-    document.execCommand('insertText', false, '\n');
+    insertAtCursor('\n');
   }
 
-  // Tab: insert 2 spaces
   if (e.key === 'Tab') {
     e.preventDefault();
-    document.execCommand('insertText', false, '  ');
+    insertAtCursor('  ');
   }
 }
 
@@ -463,14 +554,13 @@ function onEditorPaste(e) {
   const pastedText = e.clipboardData?.getData('text/plain') || '';
   if (!pastedText) return;
 
-  // Replace content in one place (code element only). Do not use execCommand:
-  // it can insert into the <pre> as a sibling of <code>, causing duplicate text.
   const currentText = getEditorText();
-  let offset = getCaretCharOffset(editor);
+  let offset = getCaretCharOffset(editorCode);
   if (offset < 0) offset = currentText.length;
   const newText = currentText.slice(0, offset) + pastedText + currentText.slice(offset);
 
   clearTimeout(highlightTimer);
+  clearTimeout(debounceTimer);
   highlightTimer = null;
 
   setEditorTextHighlighted(newText);
@@ -480,6 +570,17 @@ function onEditorPaste(e) {
 
   const newOffset = offset + pastedText.length;
   if (newOffset >= 0) setCaretCharOffset(editorCode, newOffset);
+
+  debounceTimer = setTimeout(() => {
+    if (activeTabId) {
+      const tab = tabs.find((t) => t.id === activeTabId);
+      if (tab) {
+        tab.content = getEditorText();
+        saveTabs();
+        renderTabs();
+      }
+    }
+  }, DEBOUNCE_MS);
 }
 
 // ─── Actions ────────────────────────────────────────────────
@@ -628,6 +729,17 @@ async function init() {
   editor.addEventListener('keydown', onEditorKeydown);
   editor.addEventListener('paste', onEditorPaste);
   editor.addEventListener('scroll', syncScroll);
+
+  editor.addEventListener('focus', () => {
+    const sel = window.getSelection();
+    if (!sel.rangeCount || !editorCode.contains(sel.getRangeAt(0).startContainer)) {
+      const range = document.createRange();
+      range.selectNodeContents(editorCode);
+      range.collapse(false);
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+  });
 
   // Button events
   addTabBtn.addEventListener('click', () => addTab());

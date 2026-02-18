@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "JASON (JSON Manager)",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Quick sidebar for saving and managing JSON snippets",
   "icons": {
     "16": "icons/icon16.png",
