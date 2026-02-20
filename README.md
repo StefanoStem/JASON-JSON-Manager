@@ -32,16 +32,24 @@
 
 ## Install
 
-### Chrome
-1. Go to `chrome://extensions`
-2. Enable **Developer mode**
-3. Click **Load unpacked** and select `build/chrome`
+Install from the official stores:
 
-### Firefox
-1. Go to `about:debugging#/runtime/this-firefox`
-2. Click **Load Temporary Add-on** and select `build/firefox/manifest.json`
+| Browser | Install |
+|--------|--------|
+| **Chrome** | [Chrome Web Store](https://chromewebstore.google.com/detail/jason-json-manager/lmagkaeimimgfafdeifljdiaekkljbnk) |
+| **Firefox** | [Firefox Add-ons](https://addons.mozilla.org/en-US/firefox/addon/jason-json-manager/) |
 
-## Build from source
+No zip files or developer mode needed for normal use.
+
+### Development / load unpacked
+
+To run from source (e.g. for development):
+
+**Chrome:** `chrome://extensions` → enable **Developer mode** → **Load unpacked** → select `build/chrome`
+
+**Firefox:** `about:debugging#/runtime/this-firefox` → **Load Temporary Add-on** → select `build/firefox/manifest.json`
+
+Build the project first:
 
 ```bash
 git clone https://github.com/StefanoStem/JASON-JSON-Manager.git
@@ -49,14 +57,12 @@ cd JASON-JSON-Manager
 ./build.sh
 ```
 
-This produces:
-
 | Output | Purpose |
-|---|---|
+|--------|--------|
 | `build/chrome/` | Unpacked extension for Chrome |
 | `build/firefox/` | Unpacked extension for Firefox |
-| `build/jason-chrome.zip` | Upload to Chrome Web Store |
-| `build/jason-firefox.zip` | Upload to Firefox Add-ons |
+| `build/jason-chrome.zip` | For Chrome Web Store submission |
+| `build/jason-firefox.zip` | For Firefox Add-ons submission |
 
 ## How it works
 
