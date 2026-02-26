@@ -10,7 +10,10 @@
 <body>
   <div class="app">
     <header class="header">
-      <h1 class="title">JASON</h1>
+      <div class="header-title-row">
+        <h1 class="title">JASON</h1>
+        <span class="shortcuts-help" id="shortcutsHelp" title="Ctrl+Shift+F Format · Ctrl+Shift+M Minify · Ctrl+Shift+X Clear · Ctrl+Shift+C Copy">?</span>
+      </div>
       <div class="tabs-row">
         <div class="tabs-container">
           <div class="tabs" id="tabs" role="tablist"></div>
@@ -27,18 +30,25 @@
           <p>Click + to add new tab, or drop text here</p>
         </div>
         <div class="editor-container hidden" id="editorContainer">
-          <div class="editor-wrapper">
-            <div class="line-numbers" id="lineNumbers" aria-hidden="true"></div>
-            <div class="editor-area">
-              <pre class="editor" id="editor" contenteditable="true" spellcheck="false"><code class="language-json" id="editorCode"></code></pre>
-              <div class="editor-placeholder" id="editorPlaceholder">Paste or type your JSON snippet here...</div>
+          <div class="editor-panel" id="editorPanel">
+            <div class="editor-wrapper">
+              <div class="line-numbers" id="lineNumbers" aria-hidden="true"></div>
+              <div class="fold-gutter" id="foldGutter" aria-hidden="true"></div>
+              <div class="editor-area">
+                <pre class="editor" id="editor" contenteditable="true" spellcheck="false"><code class="language-json" id="editorCode"></code></pre>
+                <div class="fold-overlay" id="foldOverlay"></div>
+                <div class="editor-placeholder" id="editorPlaceholder">Paste or type your JSON snippet here...</div>
+              </div>
             </div>
+            <div class="validation" id="validation"></div>
+            <div class="status-bar" id="statusBar"></div>
           </div>
-          <div class="validation" id="validation"></div>
           <div class="actions">
-            <button class="btn btn-copy" id="copyBtn">Copy</button>
-            <button class="btn btn-format" id="formatBtn">Format</button>
-            <button class="btn btn-clear" id="clearBtn">Clear</button>
+            <button class="btn btn-copy" id="copyBtn" title="Copy the current JSON to the clipboard (Ctrl+Shift+C)">Copy</button>
+            <button class="btn btn-clear" id="clearBtn" title="Clear the editor and remove all content (Ctrl+Shift+X)">Clear</button>
+            <button class="btn btn-format" id="formatBtn" title="Pretty-print JSON with indentation (Ctrl+Shift+F)">Format</button>
+            <button class="btn btn-minify" id="minifyBtn" title="Remove whitespace to make JSON compact (Ctrl+Shift+M)">Minify</button>
+            <button class="btn btn-duplicate" id="duplicateBtn" title="Create a new tab with a copy of the current content">Duplicate</button>
           </div>
         </div>
       </div>

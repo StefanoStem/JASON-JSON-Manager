@@ -9,7 +9,8 @@
 const MAX_TABS = 20;
 const TAB_PREVIEW_LENGTH = 20;
 const DEBOUNCE_MS = 500;
-const HIGHLIGHT_DEBOUNCE_MS = 800;
+const HIGHLIGHT_DEBOUNCE_MS = 1500;
+const LAST_ACTIVE_TAB_KEY = 'lastActiveTabId';
 
 // DOM elements
 const tabsContainer = document.getElementById('tabs');
@@ -23,6 +24,12 @@ const validationEl = document.getElementById('validation');
 const formatBtn = document.getElementById('formatBtn');
 const copyBtn = document.getElementById('copyBtn');
 const clearBtn = document.getElementById('clearBtn');
+const minifyBtn = document.getElementById('minifyBtn');
+const duplicateBtn = document.getElementById('duplicateBtn');
+const statusBar = document.getElementById('statusBar');
+const editorPanel = document.getElementById('editorPanel');
+const foldGutter = document.getElementById('foldGutter');
+const foldOverlay = document.getElementById('foldOverlay');
 const emptyState = document.getElementById('emptyState');
 const editorContainer = document.getElementById('editorContainer');
 
@@ -32,6 +39,12 @@ let activeTabId = null;
 let debounceTimer = null;
 let highlightTimer = null;
 let editingTabId = null;
+/** Set of startLine numbers for currently folded blocks */
+let foldedLines = new Set();
+
+function hasStorage() {
+  return typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local;
+}
 
 // ─── Helpers ────────────────────────────────────────────────
 
@@ -68,7 +81,7 @@ function extractText(node) {
  */
 function consolidateGhostNodes() {
   const children = Array.from(editor.childNodes);
-  const ghosts = children.filter(n => n !== editorCode);
+  const ghosts = children.filter((n) => n !== editorCode && n !== foldOverlay);
   if (ghosts.length === 0) return;
 
   let cursorOffset = -1;
@@ -84,10 +97,12 @@ function consolidateGhostNodes() {
   } catch (e) { /* ignore range errors */ }
 
   let fullText = '';
-  for (const child of children) fullText += extractText(child);
+  for (const child of children) {
+    fullText += extractText(child);
+  }
 
   editorCode.textContent = fullText;
-  ghosts.forEach(n => n.remove());
+  ghosts.forEach((n) => n.remove());
 
   if (cursorOffset >= 0) {
     setCaretCharOffset(editorCode, Math.min(cursorOffset, fullText.length));
@@ -95,16 +110,32 @@ function consolidateGhostNodes() {
 }
 
 /**
- * Get the plain text from the contenteditable editor.
- * Consolidates ghost nodes first, then reads from editorCode.textContent
- * (avoids display:block boundary newlines that editor.innerText produces).
+ * Get the full document text. When any block is folded we use the active tab's
+ * content so save/validate/copy use the real document, not the collapsed view.
  */
-function getEditorText() {
+function getFullContent() {
+  if (foldedLines.size > 0 && activeTabId) {
+    const tab = tabs.find((t) => t.id === activeTabId);
+    if (tab) {
+      const full = tab.content || '';
+      // #region agent log
+      fetch('http://127.0.0.1:7244/ingest/83038061-d1d3-431b-abcf-197c7d6bb243',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sidepanel.js:getFullContent',message:'returning tab content when folded',data:{foldedSize:foldedLines.size,fullLen:full.length},timestamp:Date.now(),hypothesisId:'H2'})}).catch(()=>{});
+      // #endregion
+      return full;
+    }
+  }
   consolidateGhostNodes();
   return editorCode.textContent || '';
 }
 
-/** Remove any nodes in the <pre> that are not the <code> element. */
+/**
+ * Get the plain text from the contenteditable editor (or full content when folded).
+ */
+function getEditorText() {
+  return getFullContent();
+}
+
+/** Remove any ghost nodes that are siblings of <code> inside <pre>. */
 function clearEditorGhostNodes() {
   Array.from(editor.childNodes).forEach((n) => {
     if (n !== editorCode) n.remove();
@@ -118,6 +149,7 @@ function setEditorTextPlain(text) {
   editorCode.textContent = text;
   clearEditorGhostNodes();
   updatePlaceholder(text);
+  foldedLines.clear();
 }
 
 /**
@@ -132,7 +164,8 @@ function safeSetHTML(element, html) {
   }
 }
 
-function setEditorTextHighlighted(text) {
+function setEditorTextHighlighted(text, clearFolds = true) {
+  if (clearFolds) foldedLines.clear();
   if (text.trim()) {
     try {
       safeSetHTML(editorCode, Prism.highlight(text, Prism.languages.json, 'json'));
@@ -145,6 +178,7 @@ function setEditorTextHighlighted(text) {
   appendTrailingBR(text);
   clearEditorGhostNodes();
   updatePlaceholder(text);
+  updateStatusBar();
 }
 
 /**
@@ -240,16 +274,30 @@ function updatePlaceholder(text) {
 // ─── Storage ────────────────────────────────────────────────
 
 async function saveTabs() {
+  if (!hasStorage()) return;
   try {
-    await chrome.storage.local.set({ tabs });
+    await chrome.storage.local.set({ tabs, [LAST_ACTIVE_TAB_KEY]: activeTabId });
   } catch (err) {
+    // #region agent log
+    fetch('http://127.0.0.1:7244/ingest/83038061-d1d3-431b-abcf-197c7d6bb243',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sidepanel.js:saveTabs:catch',message:'saveTabs threw, setting storage error UI',data:{errMsg:String(err&&err.message)},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
+    // #endregion
     console.error('Failed to save tabs:', err);
+    validationEl.textContent = '⚠️ Could not save to storage. Changes may not persist.';
+    validationEl.className = 'validation warning';
   }
 }
 
 async function loadTabs() {
+  // #region agent log
+  fetch('http://127.0.0.1:7244/ingest/83038061-d1d3-431b-abcf-197c7d6bb243',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sidepanel.js:loadTabs:entry',message:'loadTabs called',data:{},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
+  // #endregion
+  if (!hasStorage()) {
+    tabs = [{ id: generateId(), content: '', title: '' }];
+    activeTabId = tabs[0].id;
+    return;
+  }
   try {
-    const result = await chrome.storage.local.get('tabs');
+    const result = await chrome.storage.local.get(['tabs', LAST_ACTIVE_TAB_KEY]);
     tabs = (result.tabs || [])
       .filter((t) => t && typeof t.id === 'string')
       .map((t) => ({
@@ -257,7 +305,11 @@ async function loadTabs() {
         content: typeof t.content === 'string' ? t.content : '',
         title: typeof t.title === 'string' ? t.title : ''
       }));
+    activeTabId = result[LAST_ACTIVE_TAB_KEY] || null;
   } catch (err) {
+    // #region agent log
+    fetch('http://127.0.0.1:7244/ingest/83038061-d1d3-431b-abcf-197c7d6bb243',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sidepanel.js:loadTabs:catch',message:'loadTabs threw',data:{errMsg:String(err&&err.message)},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
+    // #endregion
     console.error('Failed to load tabs:', err);
     tabs = [];
   }
@@ -293,6 +345,8 @@ function renderTabs() {
     tabEl.setAttribute('role', 'tab');
     tabEl.setAttribute('aria-selected', isActive ? 'true' : 'false');
     tabEl.setAttribute('data-id', tab.id);
+    tabEl.draggable = true;
+    if (tab.content && tab.content.trim()) tabEl.setAttribute('data-has-content', 'true');
 
     const labelEl = document.createElement('span');
     labelEl.className = 'tab-preview';
@@ -320,7 +374,38 @@ function renderTabs() {
 
     closeBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      deleteTab(tab.id);
+      if (tab.content.trim() && !closeBtn.classList.contains('confirming')) {
+        closeBtn.classList.add('confirming');
+        closeBtn.textContent = '✓';
+        setTimeout(() => {
+          closeBtn.classList.remove('confirming');
+          closeBtn.textContent = '×';
+        }, 2000);
+      } else {
+        deleteTab(tab.id);
+      }
+    });
+
+    tabEl.addEventListener('dragstart', (e) => {
+      e.dataTransfer.setData('text/plain', tab.id);
+      e.dataTransfer.effectAllowed = 'move';
+    });
+    tabEl.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+    });
+    tabEl.addEventListener('drop', (e) => {
+      e.preventDefault();
+      const draggedId = e.dataTransfer.getData('text/plain');
+      const targetId = e.currentTarget.getAttribute('data-id');
+      if (!draggedId || !targetId || draggedId === targetId) return;
+      const fromIndex = tabs.findIndex((t) => t.id === draggedId);
+      const toIndex = tabs.findIndex((t) => t.id === targetId);
+      if (fromIndex === -1 || toIndex === -1) return;
+      const [removed] = tabs.splice(fromIndex, 1);
+      tabs.splice(toIndex, 0, removed);
+      saveTabs();
+      renderTabs();
     });
 
     tabsContainer.appendChild(tabEl);
@@ -433,13 +518,54 @@ async function deleteTab(id) {
   await saveTabs();
 }
 
+async function duplicateTab(id) {
+  if (tabs.length >= MAX_TABS) return;
+  flushActiveTab();
+  const original = tabs.find((t) => t.id === id);
+  if (!original) return;
+  const newTab = { id: generateId(), content: original.content, title: original.title + ' (copy)' };
+  tabs.push(newTab);
+  activeTabId = newTab.id;
+  setEditorTextHighlighted(newTab.content);
+  editorContainer.classList.remove('hidden');
+  emptyState.classList.add('hidden');
+  renderTabs();
+  await saveTabs();
+  updateLineNumbers();
+  const result = validateJson();
+  formatBtn.disabled = !result.valid;
+  updateStatusBar();
+}
+
 // ─── Line numbers ───────────────────────────────────────────
 
 function updateLineNumbers() {
   const text = getEditorText();
   const lines = text.split('\n');
   const count = Math.max(1, lines.length);
-  lineNumbers.textContent = Array.from({ length: count }, (_, i) => i + 1).join('\n');
+  const maxWidth = count.toString().length;
+  const hidden = getFoldedHiddenLineSet();
+  lineNumbers.textContent = Array.from({ length: count }, (_, i) =>
+    hidden.has(i) ? ' '.repeat(maxWidth) : (i + 1).toString().padStart(maxWidth, ' ')
+  ).join('\n');
+  updateFoldGutter();
+  updateFoldOverlay();
+}
+
+function formatFileSize(bytes) {
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
+
+function updateStatusBar() {
+  if (!statusBar) return;
+  const text = getEditorText();
+  const bytes = new Blob([text]).size;
+  const size = formatFileSize(bytes);
+  statusBar.textContent = size;
 }
 
 // ─── Validation ─────────────────────────────────────────────
@@ -456,8 +582,13 @@ function validateJson() {
     validationEl.textContent = '✅ Valid JSON';
     validationEl.className = 'validation valid';
     return { valid: true };
-  } catch {
-    validationEl.textContent = '❌ Not valid JSON';
+  } catch (err) {
+    let msg = err.message || 'Invalid JSON';
+    const trimmed = text.replace(/\s+/g, ' ').trim();
+    if (/after JSON at position \d+/i.test(msg) && /\}\s*,?\s*\{/.test(trimmed)) {
+      msg = 'Multiple values at top level. Use one object or wrap in an array: [ {...}, {...} ]';
+    }
+    validationEl.textContent = '❌ ' + msg;
     validationEl.className = 'validation invalid';
     return { valid: false };
   }
@@ -467,18 +598,26 @@ function validateJson() {
 
 function syncScroll() {
   lineNumbers.scrollTop = editor.scrollTop;
+  foldGutter.scrollTop = editor.scrollTop;
+  if (foldedLines.size > 0) {
+    foldOverlay.style.transform = `translateY(-${editor.scrollTop}px)`;
+  }
 }
 
 // ─── Editor input handling ──────────────────────────────────
 
 function onEditorInput() {
+  // #region agent log
+  fetch('http://127.0.0.1:7244/ingest/83038061-d1d3-431b-abcf-197c7d6bb243',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sidepanel.js:onEditorInput',message:'editor input fired',data:{},timestamp:Date.now(),hypothesisId:'H4'})}).catch(()=>{});
+  // #endregion
   const text = getEditorText();
   updatePlaceholder(text);
   updateLineNumbers();
+  updateStatusBar();
   const result = validateJson();
   formatBtn.disabled = !result.valid;
 
-  // Debounced re-highlight (doesn't run on every keystroke)
+  // Debounced re-highlight (longer delay to preserve undo/redo)
   clearTimeout(highlightTimer);
   highlightTimer = setTimeout(() => {
     reHighlight();
@@ -599,6 +738,7 @@ async function copyContent() {
 function clearContent() {
   setEditorTextPlain('');
   updateLineNumbers();
+  updateStatusBar();
   validateJson();
   formatBtn.disabled = true;
   if (activeTabId) {
@@ -631,7 +771,251 @@ function formatContent() {
       renderTabs();
     }
   }
+  validateJson();
   editor.focus();
+}
+
+function minifyContent() {
+  const text = getEditorText().trim();
+  if (!text) return;
+  try {
+    const parsed = JSON.parse(text);
+    const minified = JSON.stringify(parsed);
+    setEditorTextHighlighted(minified);
+    updateLineNumbers();
+  } catch {
+    return;
+  }
+  if (activeTabId) {
+    const tab = tabs.find((t) => t.id === activeTabId);
+    if (tab) {
+      tab.content = getEditorText();
+      saveTabs();
+      renderTabs();
+    }
+  }
+  editor.focus();
+}
+
+// ─── Code folding (gutter arrows) ───────────────────────────
+
+const EDITOR_LINE_HEIGHT = 1.5;
+const EDITOR_FONT_SIZE_PX = 13;
+const EDITOR_PADDING = 12;
+
+/**
+ * Find foldable blocks: each item is { startLine, endLine } for a { } or [ ] block.
+ * Uses brace matching; ignores braces inside strings.
+ */
+function computeFoldRanges(text) {
+  const ranges = [];
+  let inString = null;
+  let escape = false;
+  const stack = [];
+  let line = 0;
+
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (c === '\n') {
+      line++;
+      continue;
+    }
+    if (escape) {
+      escape = false;
+      continue;
+    }
+    if (inString) {
+      if (c === '\\') escape = true;
+      else if (c === inString) inString = null;
+      continue;
+    }
+    if (c === '"' || c === "'") {
+      inString = c;
+      continue;
+    }
+    if (c === '{' || c === '[') {
+      stack.push({ type: c === '{' ? '}' : ']', startLine: line });
+      continue;
+    }
+    if (c === '}' || c === ']') {
+      if (stack.length > 0 && stack[stack.length - 1].type === c) {
+        const { startLine } = stack.pop();
+        if (line > startLine) ranges.push({ startLine, endLine: line });
+      }
+      continue;
+    }
+  }
+  // One fold per start line: keep outermost block (max endLine) so one arrow per line
+  const byStart = new Map();
+  ranges.forEach((r) => {
+    const existing = byStart.get(r.startLine);
+    if (!existing || r.endLine > existing.endLine) byStart.set(r.startLine, r);
+  });
+  return Array.from(byStart.values());
+}
+
+/**
+ * View rows when collapsed (VS Code style): only visible lines, no separate fold row.
+ * Each item is { type: 'line', lineIndex, content, foldedBlock }.
+ * foldedBlock is set on the opening line of a folded block (value = endLine) so we append " ...".
+ */
+function getViewLines(fullText) {
+  const lines = fullText.split('\n');
+  if (lines.length === 0) return [];
+  const ranges = computeFoldRanges(fullText);
+  // #region agent log
+  const foldedArr = Array.from(foldedLines);
+  fetch('http://127.0.0.1:7244/ingest/83038061-d1d3-431b-abcf-197c7d6bb243',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sidepanel.js:getViewLines',message:'getViewLines entry',data:{fullLen:fullText.length,lineCount:lines.length,foldedSize:foldedLines.size,foldedStartLines:foldedArr,rangesCount:ranges.length,firstRange:ranges[0]||null},timestamp:Date.now(),hypothesisId:'H3'})}).catch(()=>{});
+  // #endregion
+  const viewLines = [];
+  for (let i = 0; i < lines.length; i++) {
+    const folded = ranges.find((r) => foldedLines.has(r.startLine) && r.startLine <= i && r.endLine >= i);
+    if (folded && i > folded.startLine && i < folded.endLine) continue;
+    if (folded && i === folded.startLine) {
+      viewLines.push({ type: 'line', lineIndex: i, content: lines[i], foldedBlock: folded.endLine });
+      i = folded.endLine - 1;
+      continue;
+    }
+    viewLines.push({ type: 'line', lineIndex: i, content: lines[i], foldedBlock: null });
+  }
+  // #region agent log
+  fetch('http://127.0.0.1:7244/ingest/83038061-d1d3-431b-abcf-197c7d6bb243',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sidepanel.js:getViewLines',message:'getViewLines exit',data:{viewLinesCount:viewLines.length,firstLineIndex:viewLines[0]?.lineIndex,lastLineIndex:viewLines[viewLines.length-1]?.lineIndex},timestamp:Date.now(),hypothesisId:'H3'})}).catch(()=>{});
+  // #endregion
+  return viewLines;
+}
+
+/** Collapsed view as a single string (VS Code style: opening line + " ...", then closing line). */
+function getDisplayText(fullText) {
+  const viewLines = getViewLines(fullText);
+  return viewLines
+    .map((v) => {
+      const line = v.content;
+      if (v.foldedBlock != null) {
+        const trimmed = line.trimEnd();
+        return trimmed + (trimmed ? ' ' : '') + '...';
+      }
+      return line;
+    })
+    .join('\n');
+}
+
+/** Show collapsed view in editor when folded; full content when not. Editor read-only when folded. */
+function applyFoldView() {
+  // #region agent log
+  fetch('http://127.0.0.1:7244/ingest/83038061-d1d3-431b-abcf-197c7d6bb243',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sidepanel.js:applyFoldView',message:'applyFoldView',data:{foldedSize:foldedLines.size,branch:foldedLines.size>0?'folded':'unfolded'},timestamp:Date.now(),hypothesisId:'H4'})}).catch(()=>{});
+  // #endregion
+  if (foldedLines.size > 0) {
+    const full = getFullContent();
+    if (full) {
+      const display = getDisplayText(full);
+      // #region agent log
+      fetch('http://127.0.0.1:7244/ingest/83038061-d1d3-431b-abcf-197c7d6bb243',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sidepanel.js:applyFoldView',message:'setting display text',data:{fullLen:full.length,displayLen:display.length},timestamp:Date.now(),hypothesisId:'H4'})}).catch(()=>{});
+      // #endregion
+      setEditorTextHighlighted(display, false);
+    }
+    editor.contentEditable = 'false';
+  } else {
+    const tab = activeTabId ? tabs.find((t) => t.id === activeTabId) : null;
+    const full = tab ? tab.content : getFullContent();
+    setEditorTextHighlighted(full, false);
+    editor.contentEditable = 'true';
+  }
+}
+
+function updateFoldGutter() {
+  const full = getFullContent();
+  const lines = full.split('\n');
+  const ranges = computeFoldRanges(full);
+  const startLineSet = new Set(ranges.map((r) => r.startLine));
+
+  foldGutter.textContent = '';
+  foldGutter.style.lineHeight = String(EDITOR_LINE_HEIGHT);
+
+  if (foldedLines.size > 0) {
+    const viewLines = getViewLines(full);
+    viewLines.forEach((v) => {
+      const row = document.createElement('div');
+      row.className = 'fold-gutter-row';
+      row.dataset.line = String(v.lineIndex);
+      if (startLineSet.has(v.lineIndex)) {
+        const icon = document.createElement('span');
+        icon.className = 'fold-icon';
+        icon.textContent = '▶';
+        icon.setAttribute('aria-label', 'Expand');
+        row.appendChild(icon);
+      }
+      foldGutter.appendChild(row);
+    });
+  } else {
+    const count = Math.max(1, lines.length);
+    for (let i = 0; i < count; i++) {
+      const row = document.createElement('div');
+      row.className = 'fold-gutter-row';
+      row.dataset.line = String(i);
+      if (startLineSet.has(i)) {
+        const icon = document.createElement('span');
+        icon.className = 'fold-icon';
+        icon.textContent = '▼';
+        icon.setAttribute('aria-label', 'Collapse');
+        row.appendChild(icon);
+      }
+      foldGutter.appendChild(row);
+    }
+  }
+}
+
+function updateFoldOverlay() {
+  foldOverlay.innerHTML = '';
+  foldOverlay.style.display = 'none';
+  foldOverlay.style.transform = '';
+}
+
+function updateLineNumbers() {
+  const full = getFullContent();
+  const lines = full.split('\n');
+  const count = Math.max(1, lines.length);
+
+  if (foldedLines.size > 0) {
+    const viewLines = getViewLines(full);
+    // #region agent log
+    fetch('http://127.0.0.1:7244/ingest/83038061-d1d3-431b-abcf-197c7d6bb243',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sidepanel.js:updateLineNumbers',message:'folded branch',data:{fullLineCount:lines.length,viewLinesCount:viewLines.length},timestamp:Date.now(),hypothesisId:'H5'})}).catch(()=>{});
+    // #endregion
+    const maxWidth = Math.max(...viewLines.map((v) => (v.lineIndex + 1).toString().length), 1);
+    lineNumbers.textContent = viewLines
+      .map((v) => (v.lineIndex + 1).toString().padStart(maxWidth, ' '))
+      .join('\n');
+  } else {
+    const maxWidth = count.toString().length;
+    lineNumbers.textContent = Array.from({ length: count }, (_, i) => (i + 1).toString().padStart(maxWidth, ' ')).join('\n');
+  }
+  updateFoldGutter();
+  updateFoldOverlay();
+}
+
+function toggleFold(startLine) {
+  // #region agent log
+  fetch('http://127.0.0.1:7244/ingest/83038061-d1d3-431b-abcf-197c7d6bb243',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sidepanel.js:toggleFold',message:'toggleFold',data:{startLine,hadFold:foldedLines.has(startLine)},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
+  // #endregion
+  if (foldedLines.has(startLine)) foldedLines.delete(startLine);
+  else foldedLines.add(startLine);
+  applyFoldView();
+  updateLineNumbers();
+  // #region agent log
+  fetch('http://127.0.0.1:7244/ingest/83038061-d1d3-431b-abcf-197c7d6bb243',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sidepanel.js:toggleFold',message:'after updateLineNumbers',data:{foldedSize:foldedLines.size},timestamp:Date.now(),hypothesisId:'H5'})}).catch(()=>{});
+  // #endregion
+}
+
+function onFoldGutterClick(e) {
+  const row = e.target.closest('.fold-gutter-row');
+  // #region agent log
+  fetch('http://127.0.0.1:7244/ingest/83038061-d1d3-431b-abcf-197c7d6bb243',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sidepanel.js:onFoldGutterClick',message:'click',data:{hasRow:!!row,hasIcon:!!(row&&row.querySelector('.fold-icon')),datasetLine:row?.dataset?.line},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
+  // #endregion
+  if (!row || !row.querySelector('.fold-icon')) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const line = parseInt(row.dataset.line, 10);
+  if (Number.isNaN(line)) return;
+  toggleFold(line);
 }
 
 // ─── Drop zone ──────────────────────────────────────────────
@@ -660,6 +1044,7 @@ function setupDropZone(el) {
         editorContainer.classList.remove('hidden');
         emptyState.classList.add('hidden');
         updateLineNumbers();
+        updateStatusBar();
         const res = validateJson();
         formatBtn.disabled = !res.valid;
         saveTabs();
@@ -691,6 +1076,7 @@ function onGlobalPaste(e) {
           editorContainer.classList.remove('hidden');
           emptyState.classList.add('hidden');
           updateLineNumbers();
+          updateStatusBar();
           const res = validateJson();
           formatBtn.disabled = !res.valid;
           saveTabs();
@@ -706,10 +1092,14 @@ function onGlobalPaste(e) {
 // ─── Init ───────────────────────────────────────────────────
 
 async function init() {
+  // #region agent log
+  fetch('http://127.0.0.1:7244/ingest/83038061-d1d3-431b-abcf-197c7d6bb243',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sidepanel.js:init:entry',message:'init started',data:{chromeExists:typeof chrome!=='undefined',storageExists:typeof chrome!=='undefined'&&!!chrome.storage},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
+  // #endregion
   await loadTabs();
 
   if (tabs.length > 0) {
-    activeTabId = tabs[0].id;
+    const validActiveId = activeTabId && tabs.some((t) => t.id === activeTabId);
+    if (!validActiveId) activeTabId = tabs[0].id;
     const activeTab = tabs.find((t) => t.id === activeTabId);
     setEditorTextHighlighted(activeTab?.content || '');
     editorContainer.classList.remove('hidden');
@@ -721,8 +1111,18 @@ async function init() {
 
   renderTabs();
   updateLineNumbers();
+  updateStatusBar();
   const result = validateJson();
   formatBtn.disabled = !result.valid;
+
+  document.addEventListener('keydown', (e) => {
+    if (e.ctrlKey || e.metaKey) {
+      if (e.shiftKey && e.key === 'F') { e.preventDefault(); formatContent(); }
+      if (e.shiftKey && e.key === 'M') { e.preventDefault(); minifyContent(); }
+      if (e.shiftKey && e.key === 'X') { e.preventDefault(); clearContent(); }
+      if (e.shiftKey && e.key === 'C') { e.preventDefault(); copyContent(); }
+    }
+  });
 
   // Editor events
   editor.addEventListener('input', onEditorInput);
@@ -742,10 +1142,16 @@ async function init() {
   });
 
   // Button events
+  // #region agent log
+  fetch('http://127.0.0.1:7244/ingest/83038061-d1d3-431b-abcf-197c7d6bb243',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sidepanel.js:init:buttonListeners',message:'attaching button listeners',data:{},timestamp:Date.now(),hypothesisId:'H3'})}).catch(()=>{});
+  // #endregion
   addTabBtn.addEventListener('click', () => addTab());
   copyBtn.addEventListener('click', copyContent);
   formatBtn.addEventListener('click', formatContent);
   clearBtn.addEventListener('click', clearContent);
+  minifyBtn.addEventListener('click', minifyContent);
+  duplicateBtn.addEventListener('click', () => duplicateTab(activeTabId));
+  foldGutter.addEventListener('click', onFoldGutterClick);
 
   // Global paste and drop
   document.addEventListener('paste', onGlobalPaste);
