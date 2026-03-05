@@ -11,6 +11,7 @@ const TAB_PREVIEW_LENGTH = 20;
 const DEBOUNCE_MS = 500;
 const HIGHLIGHT_DEBOUNCE_MS = 1500;
 const LAST_ACTIVE_TAB_KEY = 'lastActiveTabId';
+const MAX_UNDO = 50;
 
 // DOM elements
 const tabsContainer = document.getElementById('tabs');
@@ -27,6 +28,8 @@ const clearBtn = document.getElementById('clearBtn');
 const collapseBtn = document.getElementById('collapseBtn');
 const expandBtn = document.getElementById('expandBtn');
 const duplicateBtn = document.getElementById('duplicateBtn');
+const minifyBtn = document.getElementById('minifyBtn');
+const downloadBtn = document.getElementById('downloadBtn');
 const statusBar = document.getElementById('statusBar');
 const editorPanel = document.getElementById('editorPanel');
 const foldGutter = document.getElementById('foldGutter');
@@ -44,6 +47,11 @@ let editingTabId = null;
 let ignoreInputUntil = 0;
 /** Set of startLine numbers for currently folded blocks */
 let foldedLines = new Set();
+/** Undo/redo stacks (text content only) */
+let undoStack = [];
+let redoStack = [];
+/** True while applying undo/redo to avoid pushing to undo */
+let isUndoRedo = false;
 
 function hasStorage() {
   return typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local;
@@ -289,6 +297,47 @@ function updatePlaceholder(text) {
   }
 }
 
+// ─── Undo / Redo ────────────────────────────────────────────
+
+function pushUndoState(text) {
+  if (isUndoRedo) return;
+  if (undoStack.length > 0 && undoStack[undoStack.length - 1] === text) return;
+  if (undoStack.length >= MAX_UNDO) undoStack.shift();
+  undoStack.push(text);
+  redoStack.length = 0;
+}
+
+function applyUndoState(text) {
+  isUndoRedo = true;
+  setEditorTextHighlighted(text);
+  if (activeTabId) {
+    const tab = tabs.find((t) => t.id === activeTabId);
+    if (tab) tab.content = text;
+  }
+  updateLineNumbers();
+  updateStatusBar();
+  const res = validateJson();
+  formatBtn.disabled = !res.valid;
+  updateCollapseExpandButtons();
+  saveTabs();
+  renderTabs();
+  isUndoRedo = false;
+}
+
+function performUndo() {
+  if (undoStack.length === 0) return;
+  redoStack.push(getEditorText());
+  const prev = undoStack.pop();
+  applyUndoState(prev);
+}
+
+function performRedo() {
+  if (redoStack.length === 0) return;
+  undoStack.push(getEditorText());
+  const next = redoStack.pop();
+  applyUndoState(next);
+}
+
 // ─── Storage ────────────────────────────────────────────────
 
 async function saveTabs() {
@@ -383,16 +432,7 @@ function renderTabs() {
 
     closeBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      if ((tab.content || '').trim() && !closeBtn.classList.contains('confirming')) {
-        closeBtn.classList.add('confirming');
-        closeBtn.textContent = '✓';
-        setTimeout(() => {
-          closeBtn.classList.remove('confirming');
-          closeBtn.textContent = '×';
-        }, 2000);
-      } else {
-        deleteTab(tab.id);
-      }
+      deleteTab(tab.id);
     });
 
     tabEl.addEventListener('dragstart', (e) => {
@@ -457,12 +497,15 @@ function startEditTabTitle(tab, labelEl) {
 
 function switchTab(id) {
   flushActiveTab();
+  undoStack.length = 0;
+  redoStack.length = 0;
 
   activeTabId = id;
   const tab = tabs.find((t) => t.id === id);
 
   if (tab) {
     setEditorTextHighlighted(tab.content);
+    if (foldedLines.size === 0) editor.contentEditable = 'true';
     editorContainer.classList.remove('hidden');
     emptyState.classList.add('hidden');
   }
@@ -472,6 +515,7 @@ function switchTab(id) {
   updateLineNumbers();
   const result = validateJson();
   formatBtn.disabled = !result.valid;
+  updateMinifyButton();
   updateCollapseExpandButtons();
 }
 
@@ -479,6 +523,8 @@ async function addTab(initialContent = '') {
   if (tabs.length >= MAX_TABS) return;
 
   flushActiveTab();
+  undoStack.length = 0;
+  redoStack.length = 0;
 
   const newTab = { id: generateId(), content: initialContent || '', title: '' };
   tabs.push(newTab);
@@ -533,6 +579,8 @@ async function deleteTab(id) {
 async function duplicateTab(id) {
   if (tabs.length >= MAX_TABS) return;
   flushActiveTab();
+  undoStack.length = 0;
+  redoStack.length = 0;
   const original = tabs.find((t) => t.id === id);
   if (!original) return;
   const newTab = { id: generateId(), content: original.content, title: original.title + ' (copy)' };
@@ -701,6 +749,29 @@ function insertAtCursor(chars) {
 }
 
 function onEditorKeydown(e) {
+  if (e.key === 'z' || e.key === 'y') {
+    if (e.ctrlKey || e.metaKey) {
+      if (e.shiftKey && e.key === 'z') {
+        e.preventDefault();
+        performRedo();
+        return;
+      }
+      if (!e.shiftKey) {
+        if (e.key === 'z') {
+          e.preventDefault();
+          performUndo();
+          return;
+        }
+        if (e.key === 'y') {
+          e.preventDefault();
+          performRedo();
+          return;
+        }
+      }
+    }
+  }
+
+
   if (e.key === 'Enter') {
     e.preventDefault();
     insertAtCursor('\n');
@@ -779,6 +850,8 @@ function onEditorPaste(e) {
   const pastedText = e.clipboardData?.getData('text/plain') || '';
   if (!pastedText) return;
 
+  pushUndoState(getEditorText());
+
   const currentText = getEditorText();
   let offset = getCaretCharOffset(editorCode);
   if (offset < 0) offset = currentText.length;
@@ -823,6 +896,7 @@ async function copyContent() {
 }
 
 function clearContent() {
+  pushUndoState(getEditorText());
   setEditorTextPlain('');
   updateLineNumbers();
   updateStatusBar();
@@ -843,6 +917,7 @@ function clearContent() {
 function formatContent() {
   const text = getEditorText().trim();
   if (!text) return;
+  pushUndoState(getEditorText());
   try {
     const parsed = JSON.parse(text);
     const formatted = JSON.stringify(parsed, null, 2);
@@ -863,6 +938,46 @@ function formatContent() {
   editor.focus();
 }
 
+function minifyContent() {
+  const text = getEditorText().trim();
+  if (!text) return;
+  pushUndoState(getEditorText());
+  try {
+    const parsed = JSON.parse(text);
+    const minified = JSON.stringify(parsed);
+    setEditorTextHighlighted(minified);
+    updateLineNumbers();
+  } catch {
+    return;
+  }
+  if (activeTabId) {
+    const tab = tabs.find((t) => t.id === activeTabId);
+    if (tab) {
+      tab.content = getEditorText();
+      saveTabs();
+      renderTabs();
+    }
+  }
+  validateJson();
+  editor.focus();
+}
+
+function downloadContent() {
+  const text = getEditorText().trim();
+  if (!text) return;
+  const tab = activeTabId ? tabs.find((t) => t.id === activeTabId) : null;
+  const baseName = (tab?.title || 'json').trim() || 'json';
+  const safeName = baseName.replace(/[^\w\s-]/g, '').replace(/\s+/g, '-').slice(0, 80) || 'export';
+  const filename = safeName.endsWith('.json') ? safeName : safeName + '.json';
+  const blob = new Blob([text], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 /** Enable/disable Collapse and Expand based on whether JSON is visible (editor open and non-empty). */
 function updateCollapseExpandButtons() {
   const visible = !editorContainer.classList.contains('hidden');
@@ -870,6 +985,20 @@ function updateCollapseExpandButtons() {
   const enabled = visible && hasContent;
   if (collapseBtn) collapseBtn.disabled = !enabled;
   if (expandBtn) expandBtn.disabled = !enabled;
+  updateMinifyButton();
+}
+
+/** Enable/disable Minify based on valid JSON. */
+function updateMinifyButton() {
+  const text = (getEditorText() || '').trim();
+  let valid = false;
+  if (text) {
+    try {
+      JSON.parse(text);
+      valid = true;
+    } catch (_) {}
+  }
+  if (minifyBtn) minifyBtn.disabled = !valid;
 }
 
 function collapseAll() {
@@ -1212,9 +1341,18 @@ async function init() {
   document.addEventListener('keydown', (e) => {
     if (e.ctrlKey || e.metaKey) {
       if (e.shiftKey && e.key === 'F') { e.preventDefault(); formatContent(); }
+      if (e.shiftKey && e.key === 'M') { e.preventDefault(); minifyContent(); }
       if (e.shiftKey && e.key === 'X') { e.preventDefault(); clearContent(); }
       if (e.shiftKey && e.key === 'C') { e.preventDefault(); copyContent(); }
     }
+  });
+
+  // beforeinput: push current state to undo before typing (enables Ctrl+Z)
+  editor.addEventListener('beforeinput', (e) => {
+    if (isUndoRedo || foldedLines.size > 0) return;
+    const types = ['insertText', 'insertFromPaste', 'insertFromDrop', 'insertLineBreak',
+      'deleteContentBackward', 'deleteContentForward', 'deleteByCut'];
+    if (types.includes(e.inputType)) pushUndoState(getEditorText());
   });
 
   // Editor events — arrow keys use capture so we run before browser default
@@ -1224,6 +1362,9 @@ async function init() {
   editor.addEventListener('scroll', syncScroll);
 
   editor.addEventListener('focus', () => {
+    if (foldedLines.size === 0 && editor.contentEditable !== 'true') {
+      editor.contentEditable = 'true';
+    }
     const sel = window.getSelection();
     if (!sel.rangeCount || !editorCode.contains(sel.getRangeAt(0).startContainer)) {
       const range = document.createRange();
@@ -1239,9 +1380,11 @@ async function init() {
   copyBtn.addEventListener('click', copyContent);
   formatBtn.addEventListener('click', formatContent);
   clearBtn.addEventListener('click', clearContent);
+  minifyBtn.addEventListener('click', minifyContent);
+  duplicateBtn.addEventListener('click', () => duplicateTab(activeTabId));
+  downloadBtn.addEventListener('click', downloadContent);
   collapseBtn.addEventListener('click', collapseAll);
   expandBtn.addEventListener('click', expandAll);
-  duplicateBtn.addEventListener('click', () => duplicateTab(activeTabId));
   foldGutter.addEventListener('click', onFoldGutterClick);
 
   // Global paste and drop

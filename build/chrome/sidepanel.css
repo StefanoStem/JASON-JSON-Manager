@@ -91,7 +91,7 @@ body {
 
 .tabs-container {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   gap: 8px;
   overflow: hidden;
 }
@@ -153,17 +153,26 @@ body {
   color: var(--text-secondary);
   flex: 1;
   min-width: 0;
+  border: 1px dotted transparent;
+  border-radius: 4px;
+  padding: 2px 4px;
+  margin: -2px -4px;
 }
 
 .tab.active .tab-preview {
   color: var(--text-primary);
   font-weight: 500;
+  border-color: var(--border);
+}
+
+.tab:hover .tab-preview {
+  border-color: var(--border);
 }
 
 .tab-title-input {
   flex: 1;
   min-width: 40px;
-  border: 1px solid var(--accent);
+  border: 1px dotted var(--accent);
   background: var(--bg-primary);
   font-size: 12px;
   font-family: inherit;
@@ -202,28 +211,31 @@ body {
 }
 
 .tab-add {
-  padding: 6px 12px;
-  height: 30px;
-  min-height: 30px;
-  border: 1px solid var(--accent);
-  background: var(--accent-subtle);
-  color: var(--accent);
-  cursor: pointer;
+  order: -1;
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0;
+  border: 1px solid var(--border);
   border-radius: 6px;
-  font-size: 12px;
-  font-weight: 500;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-size: 18px;
+  font-weight: 400;
   line-height: 1;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.2s, color 0.2s, border-color 0.2s;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
   flex-shrink: 0;
-  align-self: flex-end;
 }
 
-.tab-add:hover {
-  background: var(--accent);
-  color: var(--text-primary);
+.tab-add:hover:not(:disabled) {
+  background: var(--accent-subtle);
+  color: var(--accent);
+  border-color: var(--accent);
 }
 
 .tab-add:focus-visible {
@@ -448,6 +460,8 @@ body {
    Uses pre.editor (0,1,1) to beat Prism's pre[class*="language-"] (0,1,1)
    via cascade order (this file loads after prism-tomorrow.css). */
 pre.editor {
+  user-select: text;
+  -webkit-user-select: text;
   display: block;
   position: absolute;
   top: 0;
@@ -658,21 +672,25 @@ pre.editor:focus {
   transition: background 0.2s, border-color 0.2s, color 0.2s;
 }
 
-.btn-copy {
-  background: var(--accent);
-  color: var(--text-primary);
-  border-color: var(--accent);
-}
-
-.btn-copy:hover {
-  background: var(--accent-hover);
-  border-color: var(--accent-hover);
-}
-
-
-.btn-clear {
+.btn-copy,
+.btn-clear,
+.btn-format,
+.btn-minify,
+.btn-duplicate,
+.btn-download {
   background: var(--bg-tertiary);
   color: var(--text-primary);
+}
+
+.btn-copy:hover,
+.btn-clear:hover,
+.btn-format:hover:not(:disabled),
+.btn-minify:hover:not(:disabled),
+.btn-duplicate:hover:not(:disabled),
+.btn-download:hover {
+  background: var(--accent-subtle);
+  color: var(--accent);
+  border-color: var(--accent);
 }
 
 .btn-clear:hover {
@@ -681,32 +699,20 @@ pre.editor:focus {
   border-color: var(--danger);
 }
 
-.btn-format {
-  background: var(--bg-tertiary);
-  color: var(--text-primary);
-}
-
-.btn-format:hover:not(:disabled) {
-  background: var(--accent-subtle);
-  color: var(--accent);
-  border-color: var(--accent);
-}
-
-.btn-format:disabled {
+.btn-format:disabled,
+.btn-minify:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 
 .btn-collapse,
-.btn-expand,
-.btn-duplicate {
+.btn-expand {
   background: var(--bg-tertiary);
   color: var(--text-primary);
 }
 
 .btn-collapse:hover:not(:disabled),
-.btn-expand:hover:not(:disabled),
-.btn-duplicate:hover:not(:disabled) {
+.btn-expand:hover:not(:disabled) {
   background: var(--accent-subtle);
   color: var(--accent);
   border-color: var(--accent);

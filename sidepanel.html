@@ -12,12 +12,12 @@
     <header class="header">
       <div class="header-title-row">
         <h1 class="title">JASON (JSON MANAGER)</h1>
-        <span class="shortcuts-help" id="shortcutsHelp" title="Ctrl+Shift+F Format · Ctrl+Shift+X Clear · Ctrl+Shift+C Copy">?</span>
+        <span class="shortcuts-help" id="shortcutsHelp" title="Ctrl+Z Undo · Ctrl+Y Redo · Ctrl+Shift+F Format · Ctrl+Shift+M Minify · Ctrl+Shift+X Clear · Ctrl+Shift+C Copy">?</span>
       </div>
       <div class="tabs-row">
         <div class="tabs-container">
+          <button class="tab-add" id="addTab" type="button" aria-label="Add new tab" title="Add new tab">+</button>
           <div class="tabs" id="tabs" role="tablist"></div>
-          <button class="tab-add" id="addTab" type="button" aria-label="Add new tab" title="Add new tab">+ New Tab</button>
         </div>
       </div>
     </header>
@@ -51,7 +51,9 @@
             <button class="btn btn-copy" id="copyBtn" title="Copy the current JSON to the clipboard (Ctrl+Shift+C)">Copy</button>
             <button class="btn btn-clear" id="clearBtn" title="Clear the editor and remove all content (Ctrl+Shift+X)">Clear</button>
             <button class="btn btn-format" id="formatBtn" title="Pretty-print JSON with indentation (Ctrl+Shift+F)">Format</button>
+            <button class="btn btn-minify" id="minifyBtn" title="Compact JSON to a single line (Ctrl+Shift+M)">Minify</button>
             <button class="btn btn-duplicate" id="duplicateBtn" title="Create a new tab with a copy of the current content">Duplicate</button>
+            <button class="btn btn-download" id="downloadBtn" title="Download the JSON as a file">Download</button>
           </div>
         </div>
       </div>
