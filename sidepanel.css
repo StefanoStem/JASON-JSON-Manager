@@ -1,48 +1,33 @@
 /* JASON - JSON Snippet Manager */
-/* Clean, minimal design with dark mode support */
+/* Dark theme — refined, muted palette */
 
 :root {
-  --bg-primary: #ffffff;
-  --bg-secondary: #f5f5f5;
-  --bg-tertiary: #e8e8e8;
-  --text-primary: #1a1a1a;
-  --text-secondary: #666666;
-  --accent: #2563eb;
-  --accent-hover: #1d4ed8;
-  --border: #e0e0e0;
-  --tab-active-bg: #ffffff;
-  --tab-inactive-bg: #f0f0f0;
-  --danger: #dc2626;
-  --danger-hover: #b91c1c;
-  --editor-bg: #f9f9f9;
-  --line-numbers-bg: #f0f0f0;
+  --bg-primary: #1e1e1e;
+  --bg-secondary: #282828;
+  --bg-tertiary: #363636;
+  --text-primary: #e4e4e4;
+  --text-secondary: #8a8a8a;
+  --accent: #5a7a68;
+  --accent-hover: #6b8c7a;
+  --accent-subtle: rgba(90, 122, 104, 0.15);
+  --border: #363636;
+  --tab-active-bg: #282828;
+  --tab-inactive-bg: #222222;
+  --danger: #c44a4a;
+  --danger-hover: #a63d3d;
+  --editor-bg: #282828;
+  --line-numbers-bg: #222222;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg-primary: #1a1a1a;
-    --bg-secondary: #2d2d2d;
-    --bg-tertiary: #404040;
-    --text-primary: #f5f5f5;
-    --text-secondary: #a0a0a0;
-    --border: #404040;
-    --tab-active-bg: #2d2d2d;
-    --tab-inactive-bg: #252525;
-    --accent: #3b82f6;
-    --accent-hover: #60a5fa;
-    --editor-bg: #2d2d2d;
-    --line-numbers-bg: #252525;
-  }
-  /* Dark mode: keep Prism Tomorrow token colors (already light on dark) */
-  pre.editor .token.punctuation { color: #ccc; }
-  pre.editor .token.property { color: #f08d49; }
-  pre.editor .token.string { color: #7ec699; }
-  pre.editor .token.number { color: #f08d49; }
-  pre.editor .token.boolean { color: #cc99cd; }
-  pre.editor .token.keyword { color: #cc99cd; }
-  pre.editor .token.operator { color: #67cdcc; }
-  pre.editor .token.comment { color: #999; }
-}
+/* Prism token colors — softer, cohesive */
+pre.editor .token.punctuation { color: #9ca3af; }
+pre.editor .token.property { color: #a78b71; }
+pre.editor .token.string { color: #7a9b82; }
+pre.editor .token.number { color: #a78b71; }
+pre.editor .token.boolean { color: #a78b9e; }
+pre.editor .token.keyword { color: #a78b9e; }
+pre.editor .token.operator { color: #7a9b9b; }
+pre.editor .token.comment { color: #6b7280; }
 
 * {
   box-sizing: border-box;
@@ -89,45 +74,26 @@ body {
 }
 
 .title {
-  font-size: 18px;
-  font-weight: 600;
+  font-size: 16px;
+  font-weight: 500;
   margin-bottom: 0;
   color: var(--text-primary);
-  letter-spacing: -0.02em;
+  letter-spacing: 0.02em;
 }
 
 .tabs-row {
   margin-bottom: 8px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px 0;
 }
 
 .tabs-container {
   display: flex;
   align-items: flex-end;
-  overflow-x: auto;
-  overflow-y: hidden;
-  scrollbar-width: thin;
-  border-bottom: 1px solid var(--border);
-}
-
-.add-row {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: nowrap;
-}
-
-.add-row .tab-add {
-  flex-shrink: 0;
-}
-
-.tabs-container::-webkit-scrollbar {
-  height: 4px;
-}
-
-.tabs-container::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border-radius: 2px;
+  gap: 8px;
+  overflow: hidden;
 }
 
 .tabs {
@@ -136,22 +102,34 @@ body {
   flex-wrap: nowrap;
   flex: 1;
   min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+}
+
+.tabs::-webkit-scrollbar {
+  height: 4px;
+}
+
+.tabs::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 2px;
 }
 
 .tab {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 16px;
+  padding: 8px 14px;
   background: var(--tab-inactive-bg);
   border: 1px solid transparent;
   border-bottom: none;
-  border-radius: 8px 8px 0 0;
+  border-radius: 6px 6px 0 0;
   cursor: pointer;
   flex-shrink: 0;
   max-width: 180px;
   min-width: 60px;
-  transition: background 0.2s ease;
+  transition: background 0.2s ease, border-color 0.2s ease;
 }
 
 .tab:hover {
@@ -160,18 +138,18 @@ body {
 
 .tab.active {
   background: var(--tab-active-bg);
+  border-color: var(--accent);
   border-bottom: 2px solid var(--accent);
   margin-bottom: -2px;
   z-index: 1;
   font-weight: 500;
-  box-shadow: 0 -1px 0 var(--border);
 }
 
 .tab-preview {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--text-secondary);
   flex: 1;
   min-width: 0;
@@ -179,6 +157,7 @@ body {
 
 .tab.active .tab-preview {
   color: var(--text-primary);
+  font-weight: 500;
 }
 
 .tab-title-input {
@@ -224,25 +203,27 @@ body {
 
 .tab-add {
   padding: 6px 12px;
-  height: 32px;
-  min-height: 32px;
-  border: none;
-  background: var(--accent);
-  color: white;
+  height: 30px;
+  min-height: 30px;
+  border: 1px solid var(--accent);
+  background: var(--accent-subtle);
+  color: var(--accent);
   cursor: pointer;
   border-radius: 6px;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 500;
   line-height: 1;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.15s, box-shadow 0.15s;
+  transition: background 0.2s, color 0.2s, border-color 0.2s;
   flex-shrink: 0;
+  align-self: flex-end;
 }
 
 .tab-add:hover {
-  background: var(--accent-hover);
+  background: var(--accent);
+  color: var(--text-primary);
 }
 
 .tab-add:focus-visible {
@@ -259,16 +240,16 @@ body {
 
 /* Content area - full drop zone */
 .content-drop-zone {
-  border: 2px dashed var(--border);
-  border-radius: 8px;
+  border: 1px dashed var(--border);
+  border-radius: 6px;
   background: var(--bg-secondary);
-  transition: border-color 0.15s, background 0.15s;
+  transition: border-color 0.2s, background 0.2s;
   outline: none;
 }
 
 .content-drop-zone.drag-over {
   border-color: var(--accent);
-  background: rgba(37, 99, 235, 0.06);
+  background: var(--accent-subtle);
 }
 
 /* Content */
@@ -324,11 +305,11 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 12px;
+  padding: 6px 12px;
   background: var(--bg-secondary);
   border: 1px solid var(--border);
   border-bottom: none;
-  border-radius: 8px 8px 0 0;
+  border-radius: 6px 6px 0 0;
 }
 
 .btn-toolbar {
@@ -362,14 +343,15 @@ body {
   min-height: 120px;
   display: flex;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 6px;
   overflow: hidden;
 }
 
 /* Match editor line height exactly (13px * 1.5 = 19.5px) so numbers stay 1:1 with lines */
+/* Width set dynamically by JS based on digit count (supports 1–99999+ lines) */
 .line-numbers {
   flex-shrink: 0;
-  width: 36px;
+  min-width: 36px;
   padding: 12px 8px 12px 12px;
   font-family: ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, Consolas, 'Courier New', monospace;
   font-size: 13px;
@@ -499,7 +481,7 @@ pre.editor::-webkit-scrollbar {
 }
 
 pre.editor::-webkit-scrollbar-thumb {
-  background: #555;
+  background: var(--border);
   border-radius: 3px;
 }
 
@@ -524,15 +506,6 @@ pre.editor .token {
   line-height: 19.5px;
 }
 
-/* Light mode: readable token colors (Prism Tomorrow is tuned for dark backgrounds) */
-pre.editor .token.punctuation { color: #374151; }
-pre.editor .token.property { color: #059669; }
-pre.editor .token.string { color: #b45309; }
-pre.editor .token.number { color: #059669; }
-pre.editor .token.boolean { color: #7c3aed; }
-pre.editor .token.keyword { color: #7c3aed; }
-pre.editor .token.operator { color: #0d9488; }
-pre.editor .token.comment { color: #6b7280; }
 
 pre.editor:focus {
   outline: none;
@@ -562,16 +535,17 @@ pre.editor:focus {
 
 .editor-wrapper:focus-within {
   border-color: var(--accent);
-  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.2);
+  box-shadow: 0 0 0 1px var(--accent-subtle);
 }
 
 /* Status bar row above action buttons */
 .status-bar-row {
   flex-shrink: 0;
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  align-content: flex-start;
+  gap: 8px 12px;
   padding: 10px 16px;
   border-top: 1px solid var(--border);
   background: var(--bg-primary);
@@ -580,14 +554,20 @@ pre.editor:focus {
 }
 
 #validation {
+  flex: 1 1 auto;
   display: inline-flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 6px;
   min-height: 20px;
+  min-width: 0;
+  max-width: 100%;
+  word-break: break-word;
+  white-space: normal;
+  overflow-wrap: break-word;
 }
 
 #validation.valid {
-  color: #16a34a;
+  color: var(--accent);
 }
 
 #validation.valid::before {
@@ -596,12 +576,12 @@ pre.editor:focus {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #16a34a;
+  background: var(--accent);
   flex-shrink: 0;
 }
 
 #validation.invalid {
-  color: #dc2626;
+  color: var(--danger);
 }
 
 #validation.invalid::before {
@@ -610,31 +590,31 @@ pre.editor:focus {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #dc2626;
+  background: var(--danger);
   flex-shrink: 0;
 }
 
 .status-bar-size {
   flex-shrink: 0;
+  margin-left: auto;
   color: var(--text-secondary);
 }
 
 .validation {
   font-size: 12px;
-  flex-shrink: 0;
   min-height: 20px;
 }
 
 .validation.valid {
-  color: #16a34a;
+  color: var(--accent);
 }
 
 .validation.invalid {
-  color: #dc2626;
+  color: var(--danger);
 }
 
 .validation.warning {
-  color: #b45309;
+  color: #a78b71;
 }
 
 #validation.warning::before {
@@ -643,7 +623,7 @@ pre.editor:focus {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #b45309;
+  background: #a78b71;
   flex-shrink: 0;
 }
 
@@ -669,19 +649,18 @@ pre.editor:focus {
 }
 
 .btn {
-  padding: 10px 18px;
+  padding: 8px 14px;
   border: 1px solid var(--border);
-  border-radius: 8px;
-  font-size: 13px;
+  border-radius: 6px;
+  font-size: 12px;
   font-weight: 500;
   cursor: pointer;
-  transition: background 0.15s, border-color 0.15s, color 0.15s;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  transition: background 0.2s, border-color 0.2s, color 0.2s;
 }
 
 .btn-copy {
   background: var(--accent);
-  color: white;
+  color: var(--text-primary);
   border-color: var(--accent);
 }
 
@@ -689,6 +668,7 @@ pre.editor:focus {
   background: var(--accent-hover);
   border-color: var(--accent-hover);
 }
+
 
 .btn-clear {
   background: var(--bg-tertiary);
@@ -707,8 +687,8 @@ pre.editor:focus {
 }
 
 .btn-format:hover:not(:disabled) {
-  background: var(--accent);
-  color: white;
+  background: var(--accent-subtle);
+  color: var(--accent);
   border-color: var(--accent);
 }
 
@@ -727,8 +707,8 @@ pre.editor:focus {
 .btn-collapse:hover:not(:disabled),
 .btn-expand:hover:not(:disabled),
 .btn-duplicate:hover:not(:disabled) {
-  background: var(--accent);
-  color: white;
+  background: var(--accent-subtle);
+  color: var(--accent);
   border-color: var(--accent);
 }
 
@@ -848,4 +828,3 @@ pre.editor:focus {
 .tree-children.open {
   display: block;
 }
-

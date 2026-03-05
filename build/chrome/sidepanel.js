@@ -24,7 +24,8 @@ const validationEl = document.getElementById('validation');
 const formatBtn = document.getElementById('formatBtn');
 const copyBtn = document.getElementById('copyBtn');
 const clearBtn = document.getElementById('clearBtn');
-const minifyBtn = document.getElementById('minifyBtn');
+const collapseBtn = document.getElementById('collapseBtn');
+const expandBtn = document.getElementById('expandBtn');
 const duplicateBtn = document.getElementById('duplicateBtn');
 const statusBar = document.getElementById('statusBar');
 const editorPanel = document.getElementById('editorPanel');
@@ -39,6 +40,8 @@ let activeTabId = null;
 let debounceTimer = null;
 let highlightTimer = null;
 let editingTabId = null;
+/** Timestamp until which we ignore input events (avoids reacting to programmatic content changes that momentarily fire empty) */
+let ignoreInputUntil = 0;
 /** Set of startLine numbers for currently folded blocks */
 let foldedLines = new Set();
 
@@ -116,13 +119,7 @@ function consolidateGhostNodes() {
 function getFullContent() {
   if (foldedLines.size > 0 && activeTabId) {
     const tab = tabs.find((t) => t.id === activeTabId);
-    if (tab) {
-      const full = tab.content || '';
-      // #region agent log
-      fetch('http://127.0.0.1:7244/ingest/83038061-d1d3-431b-abcf-197c7d6bb243',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sidepanel.js:getFullContent',message:'returning tab content when folded',data:{foldedSize:foldedLines.size,fullLen:full.length},timestamp:Date.now(),hypothesisId:'H2'})}).catch(()=>{});
-      // #endregion
-      return full;
-    }
+    if (tab) return tab.content || '';
   }
   consolidateGhostNodes();
   return editorCode.textContent || '';
@@ -146,6 +143,8 @@ function clearEditorGhostNodes() {
  * Set editor content as plain text (no highlighting).
  */
 function setEditorTextPlain(text) {
+  ignoreInputUntil = Date.now() + 80;
+  _cachedFoldText = null;
   editorCode.textContent = text;
   clearEditorGhostNodes();
   updatePlaceholder(text);
@@ -165,6 +164,8 @@ function safeSetHTML(element, html) {
 }
 
 function setEditorTextHighlighted(text, clearFolds = true) {
+  ignoreInputUntil = Date.now() + 80;
+  _cachedFoldText = null;
   if (clearFolds) foldedLines.clear();
   if (text.trim()) {
     try {
@@ -219,19 +220,25 @@ function reHighlight() {
 
 /**
  * Get the caret position as a character offset from start of element.
+ * Uses extractText for consistency with setCaretCharOffset's walk (handles <br> as \n).
  */
 function getCaretCharOffset(element) {
   const sel = window.getSelection();
   if (!sel.rangeCount) return -1;
   const range = sel.getRangeAt(0);
+  if (!element.contains(range.startContainer)) return -1;
   const preRange = range.cloneRange();
   preRange.selectNodeContents(element);
   preRange.setEnd(range.startContainer, range.startOffset);
-  return preRange.toString().length;
+  const frag = preRange.cloneContents();
+  const wrap = document.createElement('div');
+  wrap.appendChild(frag);
+  return extractText(wrap).length;
 }
 
 /**
  * Set the caret to a character offset within element.
+ * Walk matches extractText (text nodes + <br> as \n) for correct positioning.
  */
 function setCaretCharOffset(element, targetOffset) {
   const sel = window.getSelection();
@@ -241,12 +248,23 @@ function setCaretCharOffset(element, targetOffset) {
   function walk(node, offset) {
     if (node.nodeType === Node.TEXT_NODE) {
       if (offset + node.length >= targetOffset) {
-        range.setStart(node, targetOffset - offset);
+        range.setStart(node, Math.min(targetOffset - offset, node.length));
         range.collapse(true);
         found = true;
         return offset + node.length;
       }
       return offset + node.length;
+    }
+    if (node.nodeName === 'BR') {
+      if (offset + 1 >= targetOffset) {
+        const parent = node.parentNode;
+        const idx = Array.from(parent.childNodes).indexOf(node);
+        range.setStart(parent, targetOffset <= offset ? idx : idx + 1);
+        range.collapse(true);
+        found = true;
+        return offset + 1;
+      }
+      return offset + 1;
     }
     for (const child of node.childNodes) {
       offset = walk(child, offset);
@@ -278,9 +296,6 @@ async function saveTabs() {
   try {
     await chrome.storage.local.set({ tabs, [LAST_ACTIVE_TAB_KEY]: activeTabId });
   } catch (err) {
-    // #region agent log
-    fetch('http://127.0.0.1:7244/ingest/83038061-d1d3-431b-abcf-197c7d6bb243',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sidepanel.js:saveTabs:catch',message:'saveTabs threw, setting storage error UI',data:{errMsg:String(err&&err.message)},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
-    // #endregion
     console.error('Failed to save tabs:', err);
     validationEl.textContent = '⚠️ Could not save to storage. Changes may not persist.';
     validationEl.className = 'validation warning';
@@ -288,9 +303,6 @@ async function saveTabs() {
 }
 
 async function loadTabs() {
-  // #region agent log
-  fetch('http://127.0.0.1:7244/ingest/83038061-d1d3-431b-abcf-197c7d6bb243',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sidepanel.js:loadTabs:entry',message:'loadTabs called',data:{},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
-  // #endregion
   if (!hasStorage()) {
     tabs = [{ id: generateId(), content: '', title: '' }];
     activeTabId = tabs[0].id;
@@ -307,9 +319,6 @@ async function loadTabs() {
       }));
     activeTabId = result[LAST_ACTIVE_TAB_KEY] || null;
   } catch (err) {
-    // #region agent log
-    fetch('http://127.0.0.1:7244/ingest/83038061-d1d3-431b-abcf-197c7d6bb243',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sidepanel.js:loadTabs:catch',message:'loadTabs threw',data:{errMsg:String(err&&err.message)},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
-    // #endregion
     console.error('Failed to load tabs:', err);
     tabs = [];
   }
@@ -374,7 +383,7 @@ function renderTabs() {
 
     closeBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      if (tab.content.trim() && !closeBtn.classList.contains('confirming')) {
+      if ((tab.content || '').trim() && !closeBtn.classList.contains('confirming')) {
         closeBtn.classList.add('confirming');
         closeBtn.textContent = '✓';
         setTimeout(() => {
@@ -463,6 +472,7 @@ function switchTab(id) {
   updateLineNumbers();
   const result = validateJson();
   formatBtn.disabled = !result.valid;
+  updateCollapseExpandButtons();
 }
 
 async function addTab(initialContent = '') {
@@ -483,6 +493,7 @@ async function addTab(initialContent = '') {
   updateLineNumbers();
   const result = validateJson();
   formatBtn.disabled = !result.valid;
+  updateCollapseExpandButtons();
   editor.focus();
 }
 
@@ -507,6 +518,7 @@ async function deleteTab(id) {
     updateLineNumbers();
     const res = validateJson();
     formatBtn.disabled = !res.valid;
+    updateCollapseExpandButtons();
 
     if (tabs.length === 1 && !newTab?.content?.trim()) {
       editorContainer.classList.add('hidden');
@@ -534,29 +546,17 @@ async function duplicateTab(id) {
   updateLineNumbers();
   const result = validateJson();
   formatBtn.disabled = !result.valid;
+  updateCollapseExpandButtons();
   updateStatusBar();
 }
 
 // ─── Line numbers ───────────────────────────────────────────
 
-function updateLineNumbers() {
-  const text = getEditorText();
-  const lines = text.split('\n');
-  const count = Math.max(1, lines.length);
-  const maxWidth = count.toString().length;
-  const hidden = getFoldedHiddenLineSet();
-  lineNumbers.textContent = Array.from({ length: count }, (_, i) =>
-    hidden.has(i) ? ' '.repeat(maxWidth) : (i + 1).toString().padStart(maxWidth, ' ')
-  ).join('\n');
-  updateFoldGutter();
-  updateFoldOverlay();
-}
-
 function formatFileSize(bytes) {
   if (bytes === 0) return '0 B';
   const k = 1024;
-  const sizes = ['B', 'KB', 'MB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(k)), sizes.length - 1);
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }
 
@@ -575,21 +575,25 @@ function validateJson() {
   if (!text) {
     validationEl.textContent = '';
     validationEl.className = 'validation';
+    validationEl.removeAttribute('title');
     return { valid: false };
   }
   try {
     JSON.parse(text);
-    validationEl.textContent = '✅ Valid JSON';
+    validationEl.textContent = 'Valid JSON';
     validationEl.className = 'validation valid';
+    validationEl.removeAttribute('title');
     return { valid: true };
   } catch (err) {
-    let msg = err.message || 'Invalid JSON';
+    let msg = (err && err.message) ? String(err.message) : 'Invalid JSON';
     const trimmed = text.replace(/\s+/g, ' ').trim();
     if (/after JSON at position \d+/i.test(msg) && /\}\s*,?\s*\{/.test(trimmed)) {
       msg = 'Multiple values at top level. Use one object or wrap in an array: [ {...}, {...} ]';
     }
-    validationEl.textContent = '❌ ' + msg;
+    msg = msg.slice(0, 200).replace(/\s+/g, ' ');
+    validationEl.textContent = 'Invalid JSON — ' + msg;
     validationEl.className = 'validation invalid';
+    validationEl.title = msg;
     return { valid: false };
   }
 }
@@ -607,15 +611,36 @@ function syncScroll() {
 // ─── Editor input handling ──────────────────────────────────
 
 function onEditorInput() {
-  // #region agent log
-  fetch('http://127.0.0.1:7244/ingest/83038061-d1d3-431b-abcf-197c7d6bb243',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sidepanel.js:onEditorInput',message:'editor input fired',data:{},timestamp:Date.now(),hypothesisId:'H4'})}).catch(()=>{});
-  // #endregion
+  if (Date.now() < ignoreInputUntil) return;
   const text = getEditorText();
+  /* When content is empty or only whitespace, only update UI; do not overwrite the editor DOM (avoids content disappearing when getEditorText is briefly wrong or when folded). */
+  if (!text || !text.trim()) {
+    updatePlaceholder(text || '');
+    updateLineNumbers();
+    updateStatusBar();
+    validateJson();
+    formatBtn.disabled = true;
+    updateCollapseExpandButtons();
+    clearTimeout(highlightTimer);
+    highlightTimer = null;
+    debounceTimer = setTimeout(() => {
+      if (activeTabId) {
+        const tab = tabs.find((t) => t.id === activeTabId);
+        if (tab) {
+          tab.content = getEditorText();
+          saveTabs();
+          renderTabs();
+        }
+      }
+    }, DEBOUNCE_MS);
+    return;
+  }
   updatePlaceholder(text);
   updateLineNumbers();
   updateStatusBar();
   const result = validateJson();
   formatBtn.disabled = !result.valid;
+  updateCollapseExpandButtons();
 
   // Debounced re-highlight (longer delay to preserve undo/redo)
   clearTimeout(highlightTimer);
@@ -661,6 +686,7 @@ function insertAtCursor(chars) {
   updateLineNumbers();
   const result = validateJson();
   formatBtn.disabled = !result.valid;
+  updateCollapseExpandButtons();
 
   debounceTimer = setTimeout(() => {
     if (activeTabId) {
@@ -684,6 +710,66 @@ function onEditorKeydown(e) {
     e.preventDefault();
     insertAtCursor('  ');
   }
+
+  /* Manual arrow handling: only when selection is in editorCode; avoid getEditorText() so we don't consolidate and destroy Prism DOM on every key */
+  /* Bypass custom handling when Shift is pressed to preserve native text selection (Shift+Arrow) */
+  if (e.shiftKey) return;
+  const offset = getCaretCharOffset(editorCode);
+  if (offset < 0) return; /* selection not in editor (e.g. in ghost node): let browser handle */
+  const text = editorCode.textContent || '';
+  const len = text.length;
+
+  if (e.key === 'ArrowLeft' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    if (offset > 0) {
+      e.preventDefault();
+      e.stopPropagation();
+      setCaretCharOffset(editorCode, offset - 1);
+      editor.focus();
+    }
+    return;
+  }
+  if (e.key === 'ArrowRight' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    if (offset < len) {
+      e.preventDefault();
+      e.stopPropagation();
+      setCaretCharOffset(editorCode, offset + 1);
+      editor.focus();
+    }
+    return;
+  }
+  if (e.key === 'ArrowUp' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    const before = text.slice(0, offset);
+    const lineStart = before.lastIndexOf('\n') + 1;
+    const col = offset - lineStart;
+    if (lineStart > 0) {
+      e.preventDefault();
+      e.stopPropagation();
+      const prevChunk = text.slice(0, lineStart - 1);
+      const prevLineStart = prevChunk.lastIndexOf('\n') + 1;
+      const prevLine = text.slice(prevLineStart, lineStart - 1);
+      const newCol = Math.min(col, prevLine.length);
+      setCaretCharOffset(editorCode, prevLineStart + newCol);
+      editor.focus();
+    }
+    return;
+  }
+  if (e.key === 'ArrowDown' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    const before = text.slice(0, offset);
+    const lineStart = before.lastIndexOf('\n') + 1;
+    const col = offset - lineStart;
+    const lineEnd = text.indexOf('\n', offset);
+    const nextLineStart = lineEnd === -1 ? len : lineEnd + 1;
+    if (nextLineStart < len || (lineEnd !== -1 && offset < len)) {
+      e.preventDefault();
+      e.stopPropagation();
+      const nextLineEnd = text.indexOf('\n', nextLineStart);
+      const nextLineLen = nextLineEnd === -1 ? len - nextLineStart : nextLineEnd - nextLineStart;
+      const newCol = Math.min(col, nextLineLen);
+      setCaretCharOffset(editorCode, nextLineStart + newCol);
+      editor.focus();
+    }
+    return;
+  }
 }
 
 // ─── Paste handler (strip HTML, insert plain text) ──────────
@@ -706,6 +792,7 @@ function onEditorPaste(e) {
   updateLineNumbers();
   const result = validateJson();
   formatBtn.disabled = !result.valid;
+  updateCollapseExpandButtons();
 
   const newOffset = offset + pastedText.length;
   if (newOffset >= 0) setCaretCharOffset(editorCode, newOffset);
@@ -741,6 +828,7 @@ function clearContent() {
   updateStatusBar();
   validateJson();
   formatBtn.disabled = true;
+  updateCollapseExpandButtons();
   if (activeTabId) {
     const tab = tabs.find((t) => t.id === activeTabId);
     if (tab) {
@@ -775,26 +863,30 @@ function formatContent() {
   editor.focus();
 }
 
-function minifyContent() {
-  const text = getEditorText().trim();
-  if (!text) return;
-  try {
-    const parsed = JSON.parse(text);
-    const minified = JSON.stringify(parsed);
-    setEditorTextHighlighted(minified);
-    updateLineNumbers();
-  } catch {
-    return;
-  }
-  if (activeTabId) {
-    const tab = tabs.find((t) => t.id === activeTabId);
-    if (tab) {
-      tab.content = getEditorText();
-      saveTabs();
-      renderTabs();
-    }
-  }
-  editor.focus();
+/** Enable/disable Collapse and Expand based on whether JSON is visible (editor open and non-empty). */
+function updateCollapseExpandButtons() {
+  const visible = !editorContainer.classList.contains('hidden');
+  const hasContent = (getEditorText() || '').trim().length > 0;
+  const enabled = visible && hasContent;
+  if (collapseBtn) collapseBtn.disabled = !enabled;
+  if (expandBtn) expandBtn.disabled = !enabled;
+}
+
+function collapseAll() {
+  const full = getFullContent();
+  if (!full.trim()) return;
+  const ranges = computeFoldRanges(full);
+  ranges.forEach((r) => foldedLines.add(r.startLine));
+  applyFoldView();
+  updateLineNumbers();
+  updateCollapseExpandButtons();
+}
+
+function expandAll() {
+  foldedLines.clear();
+  applyFoldView();
+  updateLineNumbers();
+  updateCollapseExpandButtons();
 }
 
 // ─── Code folding (gutter arrows) ───────────────────────────
@@ -854,6 +946,31 @@ function computeFoldRanges(text) {
   return Array.from(byStart.values());
 }
 
+/** Cached fold computation; invalidated when content changes. */
+let _cachedFoldText = null;
+let _cachedFoldRanges = null;
+
+function getFoldBoundaries(fullText) {
+  if (_cachedFoldText === fullText) return _cachedFoldRanges;
+  _cachedFoldText = fullText;
+  _cachedFoldRanges = computeFoldRanges(fullText);
+  return _cachedFoldRanges;
+}
+
+/** Build indexed map: lineIndex -> fold range if line is inside a folded block, else null. O(lines) total. */
+function buildLineToFoldIndex(fullText) {
+  const ranges = getFoldBoundaries(fullText);
+  const lines = fullText.split('\n');
+  const lineToFold = new Array(lines.length);
+  for (const r of ranges) {
+    if (!foldedLines.has(r.startLine)) continue;
+    for (let i = r.startLine; i <= r.endLine; i++) {
+      lineToFold[i] = r;
+    }
+  }
+  return lineToFold;
+}
+
 /**
  * View rows when collapsed (VS Code style): only visible lines, no separate fold row.
  * Each item is { type: 'line', lineIndex, content, foldedBlock }.
@@ -862,14 +979,10 @@ function computeFoldRanges(text) {
 function getViewLines(fullText) {
   const lines = fullText.split('\n');
   if (lines.length === 0) return [];
-  const ranges = computeFoldRanges(fullText);
-  // #region agent log
-  const foldedArr = Array.from(foldedLines);
-  fetch('http://127.0.0.1:7244/ingest/83038061-d1d3-431b-abcf-197c7d6bb243',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sidepanel.js:getViewLines',message:'getViewLines entry',data:{fullLen:fullText.length,lineCount:lines.length,foldedSize:foldedLines.size,foldedStartLines:foldedArr,rangesCount:ranges.length,firstRange:ranges[0]||null},timestamp:Date.now(),hypothesisId:'H3'})}).catch(()=>{});
-  // #endregion
+  const lineToFold = buildLineToFoldIndex(fullText);
   const viewLines = [];
   for (let i = 0; i < lines.length; i++) {
-    const folded = ranges.find((r) => foldedLines.has(r.startLine) && r.startLine <= i && r.endLine >= i);
+    const folded = lineToFold[i];
     if (folded && i > folded.startLine && i < folded.endLine) continue;
     if (folded && i === folded.startLine) {
       viewLines.push({ type: 'line', lineIndex: i, content: lines[i], foldedBlock: folded.endLine });
@@ -878,9 +991,6 @@ function getViewLines(fullText) {
     }
     viewLines.push({ type: 'line', lineIndex: i, content: lines[i], foldedBlock: null });
   }
-  // #region agent log
-  fetch('http://127.0.0.1:7244/ingest/83038061-d1d3-431b-abcf-197c7d6bb243',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sidepanel.js:getViewLines',message:'getViewLines exit',data:{viewLinesCount:viewLines.length,firstLineIndex:viewLines[0]?.lineIndex,lastLineIndex:viewLines[viewLines.length-1]?.lineIndex},timestamp:Date.now(),hypothesisId:'H3'})}).catch(()=>{});
-  // #endregion
   return viewLines;
 }
 
@@ -901,16 +1011,10 @@ function getDisplayText(fullText) {
 
 /** Show collapsed view in editor when folded; full content when not. Editor read-only when folded. */
 function applyFoldView() {
-  // #region agent log
-  fetch('http://127.0.0.1:7244/ingest/83038061-d1d3-431b-abcf-197c7d6bb243',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sidepanel.js:applyFoldView',message:'applyFoldView',data:{foldedSize:foldedLines.size,branch:foldedLines.size>0?'folded':'unfolded'},timestamp:Date.now(),hypothesisId:'H4'})}).catch(()=>{});
-  // #endregion
   if (foldedLines.size > 0) {
     const full = getFullContent();
     if (full) {
       const display = getDisplayText(full);
-      // #region agent log
-      fetch('http://127.0.0.1:7244/ingest/83038061-d1d3-431b-abcf-197c7d6bb243',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sidepanel.js:applyFoldView',message:'setting display text',data:{fullLen:full.length,displayLen:display.length},timestamp:Date.now(),hypothesisId:'H4'})}).catch(()=>{});
-      // #endregion
       setEditorTextHighlighted(display, false);
     }
     editor.contentEditable = 'false';
@@ -925,7 +1029,7 @@ function applyFoldView() {
 function updateFoldGutter() {
   const full = getFullContent();
   const lines = full.split('\n');
-  const ranges = computeFoldRanges(full);
+  const ranges = getFoldBoundaries(full);
   const startLineSet = new Set(ranges.map((r) => r.startLine));
 
   foldGutter.textContent = '';
@@ -940,8 +1044,8 @@ function updateFoldGutter() {
       if (startLineSet.has(v.lineIndex)) {
         const icon = document.createElement('span');
         icon.className = 'fold-icon';
-        icon.textContent = '▶';
-        icon.setAttribute('aria-label', 'Expand');
+        icon.textContent = foldedLines.has(v.lineIndex) ? '▶' : '▼';
+        icon.setAttribute('aria-label', foldedLines.has(v.lineIndex) ? 'Expand' : 'Collapse');
         row.appendChild(icon);
       }
       foldGutter.appendChild(row);
@@ -975,41 +1079,31 @@ function updateLineNumbers() {
   const lines = full.split('\n');
   const count = Math.max(1, lines.length);
 
+  let maxWidth;
   if (foldedLines.size > 0) {
     const viewLines = getViewLines(full);
-    // #region agent log
-    fetch('http://127.0.0.1:7244/ingest/83038061-d1d3-431b-abcf-197c7d6bb243',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sidepanel.js:updateLineNumbers',message:'folded branch',data:{fullLineCount:lines.length,viewLinesCount:viewLines.length},timestamp:Date.now(),hypothesisId:'H5'})}).catch(()=>{});
-    // #endregion
-    const maxWidth = Math.max(...viewLines.map((v) => (v.lineIndex + 1).toString().length), 1);
+    maxWidth = Math.max(...viewLines.map((v) => (v.lineIndex + 1).toString().length), 1);
     lineNumbers.textContent = viewLines
       .map((v) => (v.lineIndex + 1).toString().padStart(maxWidth, ' '))
       .join('\n');
   } else {
-    const maxWidth = count.toString().length;
+    maxWidth = count.toString().length;
     lineNumbers.textContent = Array.from({ length: count }, (_, i) => (i + 1).toString().padStart(maxWidth, ' ')).join('\n');
   }
+  lineNumbers.style.minWidth = Math.max(36, maxWidth * 8 + 28) + 'px';
   updateFoldGutter();
   updateFoldOverlay();
 }
 
 function toggleFold(startLine) {
-  // #region agent log
-  fetch('http://127.0.0.1:7244/ingest/83038061-d1d3-431b-abcf-197c7d6bb243',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sidepanel.js:toggleFold',message:'toggleFold',data:{startLine,hadFold:foldedLines.has(startLine)},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
-  // #endregion
   if (foldedLines.has(startLine)) foldedLines.delete(startLine);
   else foldedLines.add(startLine);
   applyFoldView();
   updateLineNumbers();
-  // #region agent log
-  fetch('http://127.0.0.1:7244/ingest/83038061-d1d3-431b-abcf-197c7d6bb243',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sidepanel.js:toggleFold',message:'after updateLineNumbers',data:{foldedSize:foldedLines.size},timestamp:Date.now(),hypothesisId:'H5'})}).catch(()=>{});
-  // #endregion
 }
 
 function onFoldGutterClick(e) {
   const row = e.target.closest('.fold-gutter-row');
-  // #region agent log
-  fetch('http://127.0.0.1:7244/ingest/83038061-d1d3-431b-abcf-197c7d6bb243',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sidepanel.js:onFoldGutterClick',message:'click',data:{hasRow:!!row,hasIcon:!!(row&&row.querySelector('.fold-icon')),datasetLine:row?.dataset?.line},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
-  // #endregion
   if (!row || !row.querySelector('.fold-icon')) return;
   e.preventDefault();
   e.stopPropagation();
@@ -1047,6 +1141,7 @@ function setupDropZone(el) {
         updateStatusBar();
         const res = validateJson();
         formatBtn.disabled = !res.valid;
+        updateCollapseExpandButtons();
         saveTabs();
         renderTabs();
       }
@@ -1079,6 +1174,7 @@ function onGlobalPaste(e) {
           updateStatusBar();
           const res = validateJson();
           formatBtn.disabled = !res.valid;
+          updateCollapseExpandButtons();
           saveTabs();
           renderTabs();
         }
@@ -1092,9 +1188,6 @@ function onGlobalPaste(e) {
 // ─── Init ───────────────────────────────────────────────────
 
 async function init() {
-  // #region agent log
-  fetch('http://127.0.0.1:7244/ingest/83038061-d1d3-431b-abcf-197c7d6bb243',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sidepanel.js:init:entry',message:'init started',data:{chromeExists:typeof chrome!=='undefined',storageExists:typeof chrome!=='undefined'&&!!chrome.storage},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
-  // #endregion
   await loadTabs();
 
   if (tabs.length > 0) {
@@ -1114,19 +1207,19 @@ async function init() {
   updateStatusBar();
   const result = validateJson();
   formatBtn.disabled = !result.valid;
+  updateCollapseExpandButtons();
 
   document.addEventListener('keydown', (e) => {
     if (e.ctrlKey || e.metaKey) {
       if (e.shiftKey && e.key === 'F') { e.preventDefault(); formatContent(); }
-      if (e.shiftKey && e.key === 'M') { e.preventDefault(); minifyContent(); }
       if (e.shiftKey && e.key === 'X') { e.preventDefault(); clearContent(); }
       if (e.shiftKey && e.key === 'C') { e.preventDefault(); copyContent(); }
     }
   });
 
-  // Editor events
+  // Editor events — arrow keys use capture so we run before browser default
   editor.addEventListener('input', onEditorInput);
-  editor.addEventListener('keydown', onEditorKeydown);
+  editor.addEventListener('keydown', onEditorKeydown, { capture: true });
   editor.addEventListener('paste', onEditorPaste);
   editor.addEventListener('scroll', syncScroll);
 
@@ -1142,14 +1235,12 @@ async function init() {
   });
 
   // Button events
-  // #region agent log
-  fetch('http://127.0.0.1:7244/ingest/83038061-d1d3-431b-abcf-197c7d6bb243',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sidepanel.js:init:buttonListeners',message:'attaching button listeners',data:{},timestamp:Date.now(),hypothesisId:'H3'})}).catch(()=>{});
-  // #endregion
   addTabBtn.addEventListener('click', () => addTab());
   copyBtn.addEventListener('click', copyContent);
   formatBtn.addEventListener('click', formatContent);
   clearBtn.addEventListener('click', clearContent);
-  minifyBtn.addEventListener('click', minifyContent);
+  collapseBtn.addEventListener('click', collapseAll);
+  expandBtn.addEventListener('click', expandAll);
   duplicateBtn.addEventListener('click', () => duplicateTab(activeTabId));
   foldGutter.addEventListener('click', onFoldGutterClick);
 
@@ -1163,6 +1254,18 @@ async function init() {
       contentArea.focus();
     }
   });
+
+  // Save when panel is closed/hidden so changes persist (debounce may not have fired)
+  function saveBeforeClose() {
+    flushActiveTab();
+    if (hasStorage()) {
+      chrome.storage.local.set({ tabs, [LAST_ACTIVE_TAB_KEY]: activeTabId });
+    }
+  }
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') saveBeforeClose();
+  });
+  window.addEventListener('pagehide', saveBeforeClose);
 }
 
 init();

@@ -5,6 +5,19 @@ set -e
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 BUILD="$ROOT/build"
 
+# Release guard: fail if debug ingest endpoints or telemetry markers are present
+TELEMETRY_MARKERS=(
+  '127.0.0.1:7244'
+  '/ingest/'
+  '#region agent log'
+)
+for marker in "${TELEMETRY_MARKERS[@]}"; do
+  if grep -r --include='*.js' --include='*.html' "$marker" "$ROOT" 2>/dev/null | grep -v -e "$BUILD" -e 'node_modules' | grep -q .; then
+    echo "Release guard failed: telemetry or debug ingest marker found: $marker"
+    exit 1
+  fi
+done
+
 # Shared files copied into both builds
 SHARED=(
   sidepanel.html
@@ -40,5 +53,13 @@ echo "Creating zip files..."
 echo "  → build/jason-chrome.zip"
 (cd "$BUILD/firefox" && zip -r -q "$BUILD/jason-firefox.zip" .)
 echo "  → build/jason-firefox.zip"
+
+# Manifest sync check: fail if build manifests diverge from source
+for browser in chrome firefox; do
+  if ! cmp -s "$ROOT/manifests/$browser.json" "$BUILD/$browser/manifest.json"; then
+    echo "Manifest sync failed: build/$browser/manifest.json diverges from manifests/$browser.json"
+    exit 1
+  fi
+done
 
 echo "Done."

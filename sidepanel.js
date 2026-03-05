@@ -40,6 +40,8 @@ let activeTabId = null;
 let debounceTimer = null;
 let highlightTimer = null;
 let editingTabId = null;
+/** Timestamp until which we ignore input events (avoids reacting to programmatic content changes that momentarily fire empty) */
+let ignoreInputUntil = 0;
 /** Set of startLine numbers for currently folded blocks */
 let foldedLines = new Set();
 
@@ -141,6 +143,8 @@ function clearEditorGhostNodes() {
  * Set editor content as plain text (no highlighting).
  */
 function setEditorTextPlain(text) {
+  ignoreInputUntil = Date.now() + 80;
+  _cachedFoldText = null;
   editorCode.textContent = text;
   clearEditorGhostNodes();
   updatePlaceholder(text);
@@ -160,6 +164,8 @@ function safeSetHTML(element, html) {
 }
 
 function setEditorTextHighlighted(text, clearFolds = true) {
+  ignoreInputUntil = Date.now() + 80;
+  _cachedFoldText = null;
   if (clearFolds) foldedLines.clear();
   if (text.trim()) {
     try {
@@ -214,19 +220,25 @@ function reHighlight() {
 
 /**
  * Get the caret position as a character offset from start of element.
+ * Uses extractText for consistency with setCaretCharOffset's walk (handles <br> as \n).
  */
 function getCaretCharOffset(element) {
   const sel = window.getSelection();
   if (!sel.rangeCount) return -1;
   const range = sel.getRangeAt(0);
+  if (!element.contains(range.startContainer)) return -1;
   const preRange = range.cloneRange();
   preRange.selectNodeContents(element);
   preRange.setEnd(range.startContainer, range.startOffset);
-  return preRange.toString().length;
+  const frag = preRange.cloneContents();
+  const wrap = document.createElement('div');
+  wrap.appendChild(frag);
+  return extractText(wrap).length;
 }
 
 /**
  * Set the caret to a character offset within element.
+ * Walk matches extractText (text nodes + <br> as \n) for correct positioning.
  */
 function setCaretCharOffset(element, targetOffset) {
   const sel = window.getSelection();
@@ -236,12 +248,23 @@ function setCaretCharOffset(element, targetOffset) {
   function walk(node, offset) {
     if (node.nodeType === Node.TEXT_NODE) {
       if (offset + node.length >= targetOffset) {
-        range.setStart(node, targetOffset - offset);
+        range.setStart(node, Math.min(targetOffset - offset, node.length));
         range.collapse(true);
         found = true;
         return offset + node.length;
       }
       return offset + node.length;
+    }
+    if (node.nodeName === 'BR') {
+      if (offset + 1 >= targetOffset) {
+        const parent = node.parentNode;
+        const idx = Array.from(parent.childNodes).indexOf(node);
+        range.setStart(parent, targetOffset <= offset ? idx : idx + 1);
+        range.collapse(true);
+        found = true;
+        return offset + 1;
+      }
+      return offset + 1;
     }
     for (const child of node.childNodes) {
       offset = walk(child, offset);
@@ -273,9 +296,6 @@ async function saveTabs() {
   try {
     await chrome.storage.local.set({ tabs, [LAST_ACTIVE_TAB_KEY]: activeTabId });
   } catch (err) {
-    // #region agent log
-    fetch('http://127.0.0.1:7244/ingest/83038061-d1d3-431b-abcf-197c7d6bb243',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sidepanel.js:saveTabs:catch',message:'saveTabs threw, setting storage error UI',data:{errMsg:String(err&&err.message)},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
-    // #endregion
     console.error('Failed to save tabs:', err);
     validationEl.textContent = '⚠️ Could not save to storage. Changes may not persist.';
     validationEl.className = 'validation warning';
@@ -283,9 +303,6 @@ async function saveTabs() {
 }
 
 async function loadTabs() {
-  // #region agent log
-  fetch('http://127.0.0.1:7244/ingest/83038061-d1d3-431b-abcf-197c7d6bb243',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sidepanel.js:loadTabs:entry',message:'loadTabs called',data:{},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
-  // #endregion
   if (!hasStorage()) {
     tabs = [{ id: generateId(), content: '', title: '' }];
     activeTabId = tabs[0].id;
@@ -302,9 +319,6 @@ async function loadTabs() {
       }));
     activeTabId = result[LAST_ACTIVE_TAB_KEY] || null;
   } catch (err) {
-    // #region agent log
-    fetch('http://127.0.0.1:7244/ingest/83038061-d1d3-431b-abcf-197c7d6bb243',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sidepanel.js:loadTabs:catch',message:'loadTabs threw',data:{errMsg:String(err&&err.message)},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
-    // #endregion
     console.error('Failed to load tabs:', err);
     tabs = [];
   }
@@ -369,7 +383,7 @@ function renderTabs() {
 
     closeBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      if (tab.content.trim() && !closeBtn.classList.contains('confirming')) {
+      if ((tab.content || '').trim() && !closeBtn.classList.contains('confirming')) {
         closeBtn.classList.add('confirming');
         closeBtn.textContent = '✓';
         setTimeout(() => {
@@ -538,24 +552,11 @@ async function duplicateTab(id) {
 
 // ─── Line numbers ───────────────────────────────────────────
 
-function updateLineNumbers() {
-  const text = getEditorText();
-  const lines = text.split('\n');
-  const count = Math.max(1, lines.length);
-  const maxWidth = count.toString().length;
-  const hidden = getFoldedHiddenLineSet();
-  lineNumbers.textContent = Array.from({ length: count }, (_, i) =>
-    hidden.has(i) ? ' '.repeat(maxWidth) : (i + 1).toString().padStart(maxWidth, ' ')
-  ).join('\n');
-  updateFoldGutter();
-  updateFoldOverlay();
-}
-
 function formatFileSize(bytes) {
   if (bytes === 0) return '0 B';
   const k = 1024;
-  const sizes = ['B', 'KB', 'MB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(k)), sizes.length - 1);
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }
 
@@ -584,12 +585,13 @@ function validateJson() {
     validationEl.removeAttribute('title');
     return { valid: true };
   } catch (err) {
-    let msg = err.message || 'Invalid JSON';
+    let msg = (err && err.message) ? String(err.message) : 'Invalid JSON';
     const trimmed = text.replace(/\s+/g, ' ').trim();
     if (/after JSON at position \d+/i.test(msg) && /\}\s*,?\s*\{/.test(trimmed)) {
       msg = 'Multiple values at top level. Use one object or wrap in an array: [ {...}, {...} ]';
     }
-    validationEl.textContent = 'Invalid JSON';
+    msg = msg.slice(0, 200).replace(/\s+/g, ' ');
+    validationEl.textContent = 'Invalid JSON — ' + msg;
     validationEl.className = 'validation invalid';
     validationEl.title = msg;
     return { valid: false };
@@ -609,10 +611,30 @@ function syncScroll() {
 // ─── Editor input handling ──────────────────────────────────
 
 function onEditorInput() {
-  // #region agent log
-  fetch('http://127.0.0.1:7244/ingest/83038061-d1d3-431b-abcf-197c7d6bb243',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sidepanel.js:onEditorInput',message:'editor input fired',data:{},timestamp:Date.now(),hypothesisId:'H4'})}).catch(()=>{});
-  // #endregion
+  if (Date.now() < ignoreInputUntil) return;
   const text = getEditorText();
+  /* When content is empty or only whitespace, only update UI; do not overwrite the editor DOM (avoids content disappearing when getEditorText is briefly wrong or when folded). */
+  if (!text || !text.trim()) {
+    updatePlaceholder(text || '');
+    updateLineNumbers();
+    updateStatusBar();
+    validateJson();
+    formatBtn.disabled = true;
+    updateCollapseExpandButtons();
+    clearTimeout(highlightTimer);
+    highlightTimer = null;
+    debounceTimer = setTimeout(() => {
+      if (activeTabId) {
+        const tab = tabs.find((t) => t.id === activeTabId);
+        if (tab) {
+          tab.content = getEditorText();
+          saveTabs();
+          renderTabs();
+        }
+      }
+    }, DEBOUNCE_MS);
+    return;
+  }
   updatePlaceholder(text);
   updateLineNumbers();
   updateStatusBar();
@@ -687,6 +709,66 @@ function onEditorKeydown(e) {
   if (e.key === 'Tab') {
     e.preventDefault();
     insertAtCursor('  ');
+  }
+
+  /* Manual arrow handling: only when selection is in editorCode; avoid getEditorText() so we don't consolidate and destroy Prism DOM on every key */
+  /* Bypass custom handling when Shift is pressed to preserve native text selection (Shift+Arrow) */
+  if (e.shiftKey) return;
+  const offset = getCaretCharOffset(editorCode);
+  if (offset < 0) return; /* selection not in editor (e.g. in ghost node): let browser handle */
+  const text = editorCode.textContent || '';
+  const len = text.length;
+
+  if (e.key === 'ArrowLeft' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    if (offset > 0) {
+      e.preventDefault();
+      e.stopPropagation();
+      setCaretCharOffset(editorCode, offset - 1);
+      editor.focus();
+    }
+    return;
+  }
+  if (e.key === 'ArrowRight' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    if (offset < len) {
+      e.preventDefault();
+      e.stopPropagation();
+      setCaretCharOffset(editorCode, offset + 1);
+      editor.focus();
+    }
+    return;
+  }
+  if (e.key === 'ArrowUp' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    const before = text.slice(0, offset);
+    const lineStart = before.lastIndexOf('\n') + 1;
+    const col = offset - lineStart;
+    if (lineStart > 0) {
+      e.preventDefault();
+      e.stopPropagation();
+      const prevChunk = text.slice(0, lineStart - 1);
+      const prevLineStart = prevChunk.lastIndexOf('\n') + 1;
+      const prevLine = text.slice(prevLineStart, lineStart - 1);
+      const newCol = Math.min(col, prevLine.length);
+      setCaretCharOffset(editorCode, prevLineStart + newCol);
+      editor.focus();
+    }
+    return;
+  }
+  if (e.key === 'ArrowDown' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    const before = text.slice(0, offset);
+    const lineStart = before.lastIndexOf('\n') + 1;
+    const col = offset - lineStart;
+    const lineEnd = text.indexOf('\n', offset);
+    const nextLineStart = lineEnd === -1 ? len : lineEnd + 1;
+    if (nextLineStart < len || (lineEnd !== -1 && offset < len)) {
+      e.preventDefault();
+      e.stopPropagation();
+      const nextLineEnd = text.indexOf('\n', nextLineStart);
+      const nextLineLen = nextLineEnd === -1 ? len - nextLineStart : nextLineEnd - nextLineStart;
+      const newCol = Math.min(col, nextLineLen);
+      setCaretCharOffset(editorCode, nextLineStart + newCol);
+      editor.focus();
+    }
+    return;
   }
 }
 
@@ -864,6 +946,31 @@ function computeFoldRanges(text) {
   return Array.from(byStart.values());
 }
 
+/** Cached fold computation; invalidated when content changes. */
+let _cachedFoldText = null;
+let _cachedFoldRanges = null;
+
+function getFoldBoundaries(fullText) {
+  if (_cachedFoldText === fullText) return _cachedFoldRanges;
+  _cachedFoldText = fullText;
+  _cachedFoldRanges = computeFoldRanges(fullText);
+  return _cachedFoldRanges;
+}
+
+/** Build indexed map: lineIndex -> fold range if line is inside a folded block, else null. O(lines) total. */
+function buildLineToFoldIndex(fullText) {
+  const ranges = getFoldBoundaries(fullText);
+  const lines = fullText.split('\n');
+  const lineToFold = new Array(lines.length);
+  for (const r of ranges) {
+    if (!foldedLines.has(r.startLine)) continue;
+    for (let i = r.startLine; i <= r.endLine; i++) {
+      lineToFold[i] = r;
+    }
+  }
+  return lineToFold;
+}
+
 /**
  * View rows when collapsed (VS Code style): only visible lines, no separate fold row.
  * Each item is { type: 'line', lineIndex, content, foldedBlock }.
@@ -872,10 +979,10 @@ function computeFoldRanges(text) {
 function getViewLines(fullText) {
   const lines = fullText.split('\n');
   if (lines.length === 0) return [];
-  const ranges = computeFoldRanges(fullText);
+  const lineToFold = buildLineToFoldIndex(fullText);
   const viewLines = [];
   for (let i = 0; i < lines.length; i++) {
-    const folded = ranges.find((r) => foldedLines.has(r.startLine) && r.startLine <= i && r.endLine >= i);
+    const folded = lineToFold[i];
     if (folded && i > folded.startLine && i < folded.endLine) continue;
     if (folded && i === folded.startLine) {
       viewLines.push({ type: 'line', lineIndex: i, content: lines[i], foldedBlock: folded.endLine });
@@ -922,7 +1029,7 @@ function applyFoldView() {
 function updateFoldGutter() {
   const full = getFullContent();
   const lines = full.split('\n');
-  const ranges = computeFoldRanges(full);
+  const ranges = getFoldBoundaries(full);
   const startLineSet = new Set(ranges.map((r) => r.startLine));
 
   foldGutter.textContent = '';
@@ -937,8 +1044,8 @@ function updateFoldGutter() {
       if (startLineSet.has(v.lineIndex)) {
         const icon = document.createElement('span');
         icon.className = 'fold-icon';
-        icon.textContent = '▶';
-        icon.setAttribute('aria-label', 'Expand');
+        icon.textContent = foldedLines.has(v.lineIndex) ? '▶' : '▼';
+        icon.setAttribute('aria-label', foldedLines.has(v.lineIndex) ? 'Expand' : 'Collapse');
         row.appendChild(icon);
       }
       foldGutter.appendChild(row);
@@ -972,16 +1079,18 @@ function updateLineNumbers() {
   const lines = full.split('\n');
   const count = Math.max(1, lines.length);
 
+  let maxWidth;
   if (foldedLines.size > 0) {
     const viewLines = getViewLines(full);
-    const maxWidth = Math.max(...viewLines.map((v) => (v.lineIndex + 1).toString().length), 1);
+    maxWidth = Math.max(...viewLines.map((v) => (v.lineIndex + 1).toString().length), 1);
     lineNumbers.textContent = viewLines
       .map((v) => (v.lineIndex + 1).toString().padStart(maxWidth, ' '))
       .join('\n');
   } else {
-    const maxWidth = count.toString().length;
+    maxWidth = count.toString().length;
     lineNumbers.textContent = Array.from({ length: count }, (_, i) => (i + 1).toString().padStart(maxWidth, ' ')).join('\n');
   }
+  lineNumbers.style.minWidth = Math.max(36, maxWidth * 8 + 28) + 'px';
   updateFoldGutter();
   updateFoldOverlay();
 }
@@ -1079,9 +1188,6 @@ function onGlobalPaste(e) {
 // ─── Init ───────────────────────────────────────────────────
 
 async function init() {
-  // #region agent log
-  fetch('http://127.0.0.1:7244/ingest/83038061-d1d3-431b-abcf-197c7d6bb243',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sidepanel.js:init:entry',message:'init started',data:{chromeExists:typeof chrome!=='undefined',storageExists:typeof chrome!=='undefined'&&!!chrome.storage},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
-  // #endregion
   await loadTabs();
 
   if (tabs.length > 0) {
@@ -1111,9 +1217,9 @@ async function init() {
     }
   });
 
-  // Editor events
+  // Editor events — arrow keys use capture so we run before browser default
   editor.addEventListener('input', onEditorInput);
-  editor.addEventListener('keydown', onEditorKeydown);
+  editor.addEventListener('keydown', onEditorKeydown, { capture: true });
   editor.addEventListener('paste', onEditorPaste);
   editor.addEventListener('scroll', syncScroll);
 
@@ -1129,9 +1235,6 @@ async function init() {
   });
 
   // Button events
-  // #region agent log
-  fetch('http://127.0.0.1:7244/ingest/83038061-d1d3-431b-abcf-197c7d6bb243',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sidepanel.js:init:buttonListeners',message:'attaching button listeners',data:{},timestamp:Date.now(),hypothesisId:'H3'})}).catch(()=>{});
-  // #endregion
   addTabBtn.addEventListener('click', () => addTab());
   copyBtn.addEventListener('click', copyContent);
   formatBtn.addEventListener('click', formatContent);
@@ -1151,6 +1254,18 @@ async function init() {
       contentArea.focus();
     }
   });
+
+  // Save when panel is closed/hidden so changes persist (debounce may not have fired)
+  function saveBeforeClose() {
+    flushActiveTab();
+    if (hasStorage()) {
+      chrome.storage.local.set({ tabs, [LAST_ACTIVE_TAB_KEY]: activeTabId });
+    }
+  }
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') saveBeforeClose();
+  });
+  window.addEventListener('pagehide', saveBeforeClose);
 }
 
 init();
