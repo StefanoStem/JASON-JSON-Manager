@@ -49,7 +49,7 @@ To run from source (e.g. for development):
 
 **Firefox:** `about:debugging#/runtime/this-firefox` → **Load Temporary Add-on** → select `build/firefox/manifest.json`
 
-Build the project first:
+**Run `./build.sh` first** to produce fresh build output (required for testing):
 
 ```bash
 git clone https://github.com/StefanoStem/JASON-JSON-Manager.git
@@ -63,6 +63,14 @@ cd JASON-JSON-Manager
 | `build/firefox/` | Unpacked extension for Firefox |
 | `build/jason-chrome.zip` | For Chrome Web Store submission |
 | `build/jason-firefox.zip` | For Firefox Add-ons submission |
+
+### Release workflow
+
+**Run a fresh build before QA or publishing.** Stale build artifacts cause manifest-sync failures and inconsistent tested artifacts.
+
+1. **Always run `./build.sh`** to regenerate `build/*/` from source before testing or releasing. The built `manifest.json` files are copied from `manifests/*.json` — do not edit `build/*/manifest.json` manually.
+2. The build script verifies that `build/*/manifest.json` matches `manifests/*.json` and fails if they diverge.
+3. Load the extension from `build/chrome` or `build/firefox` for QA, then submit the corresponding zip for publishing.
 
 ## How it works
 
