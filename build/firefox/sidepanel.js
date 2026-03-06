@@ -717,6 +717,7 @@ function onEditorInput() {
  * Avoids execCommand which splits <code> elements and creates ghost nodes.
  */
 function insertAtCursor(chars) {
+  pushUndoState(getEditorText());
   const text = getEditorText();
   let offset = getCaretCharOffset(editorCode);
   if (offset < 0) offset = text.length;
@@ -892,6 +893,13 @@ async function copyContent() {
     setTimeout(() => { copyBtn.textContent = originalText; }, 1500);
   } catch (err) {
     console.error('Copy failed:', err);
+    const originalText = copyBtn.textContent;
+    copyBtn.textContent = 'Copy failed';
+    copyBtn.title = err instanceof Error ? err.message : 'Clipboard access denied';
+    setTimeout(() => {
+      copyBtn.textContent = originalText;
+      copyBtn.title = 'Copy the current JSON to the clipboard (Ctrl+Shift+C)';
+    }, 2000);
   }
 }
 
@@ -1286,11 +1294,10 @@ function onGlobalPaste(e) {
   // If paste is inside the editor, the editor's own paste handler deals with it
   if (editor.contains(e.target)) return;
 
-  if (contentArea.contains(e.target)) {
-    const text = e.clipboardData?.getData('text/plain');
-    if (text) {
-      e.preventDefault();
-      if (activeTabId) {
+  const text = e.clipboardData?.getData('text/plain');
+  if (text) {
+    e.preventDefault();
+    if (activeTabId) {
         const tab = tabs.find((t) => t.id === activeTabId);
         if (tab) {
           const current = getEditorText();
@@ -1304,12 +1311,11 @@ function onGlobalPaste(e) {
           const res = validateJson();
           formatBtn.disabled = !res.valid;
           updateCollapseExpandButtons();
-          saveTabs();
-          renderTabs();
-        }
-      } else {
-        addTab(text);
+        saveTabs();
+        renderTabs();
       }
+    } else {
+      addTab(text);
     }
   }
 }
@@ -1350,7 +1356,7 @@ async function init() {
   // beforeinput: push current state to undo before typing (enables Ctrl+Z)
   editor.addEventListener('beforeinput', (e) => {
     if (isUndoRedo || foldedLines.size > 0) return;
-    const types = ['insertText', 'insertFromPaste', 'insertFromDrop', 'insertLineBreak',
+    const types = ['insertText', 'insertFromDrop', 'insertLineBreak',
       'deleteContentBackward', 'deleteContentForward', 'deleteByCut'];
     if (types.includes(e.inputType)) pushUndoState(getEditorText());
   });
@@ -1398,11 +1404,12 @@ async function init() {
     }
   });
 
-  // Save when panel is closed/hidden so changes persist (debounce may not have fired)
+  // Save when panel is closed/hidden so changes persist (debounce may not have fired).
+  // Send to background script so persistence completes even if panel context is torn down.
   function saveBeforeClose() {
     flushActiveTab();
     if (hasStorage()) {
-      chrome.storage.local.set({ tabs, [LAST_ACTIVE_TAB_KEY]: activeTabId });
+      chrome.runtime.sendMessage({ type: 'saveTabs', tabs, lastActiveTabId: activeTabId }).catch(() => {});
     }
   }
   document.addEventListener('visibilitychange', () => {

@@ -7,8 +7,8 @@
   --bg-tertiary: #363636;
   --text-primary: #e4e4e4;
   --text-secondary: #8a8a8a;
-  --accent: #5a7a68;
-  --accent-hover: #6b8c7a;
+  --accent: #6e927e;
+  --accent-hover: #82a890;
   --accent-subtle: rgba(90, 122, 104, 0.15);
   --border: #363636;
   --tab-active-bg: #282828;
@@ -21,12 +21,12 @@
 
 /* Prism token colors — softer, cohesive */
 pre.editor .token.punctuation { color: #9ca3af; }
-pre.editor .token.property { color: #a78b71; }
-pre.editor .token.string { color: #7a9b82; }
-pre.editor .token.number { color: #a78b71; }
-pre.editor .token.boolean { color: #a78b9e; }
-pre.editor .token.keyword { color: #a78b9e; }
-pre.editor .token.operator { color: #7a9b9b; }
+pre.editor .token.property { color: #c4a080; }
+pre.editor .token.string { color: #8fb098; }
+pre.editor .token.number { color: #c4a080; }
+pre.editor .token.boolean { color: #b89ab0; }
+pre.editor .token.keyword { color: #b89ab0; }
+pre.editor .token.operator { color: #8fb0b0; }
 pre.editor .token.comment { color: #6b7280; }
 
 * {
@@ -628,7 +628,7 @@ pre.editor:focus {
 }
 
 .validation.warning {
-  color: #a78b71;
+  color: #c4a080;
 }
 
 #validation.warning::before {
@@ -637,7 +637,7 @@ pre.editor:focus {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #a78b71;
+  background: #c4a080;
   flex-shrink: 0;
 }
 
