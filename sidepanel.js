@@ -11,6 +11,7 @@ const TAB_PREVIEW_LENGTH = 20;
 const DEBOUNCE_MS = 500;
 const HIGHLIGHT_DEBOUNCE_MS = 1500;
 const LAST_ACTIVE_TAB_KEY = 'lastActiveTabId';
+const THEME_KEY = 'theme';
 const MAX_UNDO = 50;
 
 // DOM elements
@@ -36,6 +37,7 @@ const foldGutter = document.getElementById('foldGutter');
 const foldOverlay = document.getElementById('foldOverlay');
 const emptyState = document.getElementById('emptyState');
 const editorContainer = document.getElementById('editorContainer');
+const themeToggle = document.getElementById('themeToggle');
 
 // State
 let tabs = [];
@@ -55,6 +57,39 @@ let isUndoRedo = false;
 
 function hasStorage() {
   return typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local;
+}
+
+// ─── Theme ─────────────────────────────────────────────────
+
+function applyTheme(theme) {
+  document.body.setAttribute('data-theme', theme === 'light' ? 'light' : '');
+  if (themeToggle) {
+    themeToggle.setAttribute('aria-label', theme === 'light' ? 'Switch to dark theme' : 'Switch to light theme');
+    themeToggle.title = theme === 'light' ? 'Switch to dark theme' : 'Switch to light theme';
+  }
+}
+
+async function loadTheme() {
+  if (!hasStorage()) return 'dark';
+  try {
+    const result = await chrome.storage.local.get([THEME_KEY]);
+    return result[THEME_KEY] === 'light' ? 'light' : 'dark';
+  } catch {
+    return 'dark';
+  }
+}
+
+async function toggleTheme() {
+  const current = document.body.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
+  const next = current === 'light' ? 'dark' : 'light';
+  applyTheme(next);
+  if (hasStorage()) {
+    try {
+      await chrome.storage.local.set({ [THEME_KEY]: next });
+    } catch (err) {
+      console.error('Failed to save theme:', err);
+    }
+  }
 }
 
 // ─── Helpers ────────────────────────────────────────────────
@@ -1323,7 +1358,14 @@ function onGlobalPaste(e) {
 // ─── Init ───────────────────────────────────────────────────
 
 async function init() {
+  const theme = await loadTheme();
+  applyTheme(theme);
+
   await loadTabs();
+
+  if (themeToggle) {
+    themeToggle.addEventListener('click', toggleTheme);
+  }
 
   if (tabs.length > 0) {
     const validActiveId = activeTabId && tabs.some((t) => t.id === activeTabId);
