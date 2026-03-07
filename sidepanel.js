@@ -13,6 +13,8 @@ const HIGHLIGHT_DEBOUNCE_MS = 1500;
 const LAST_ACTIVE_TAB_KEY = 'lastActiveTabId';
 const THEME_KEY = 'theme';
 const MAX_UNDO = 50;
+/** Below this length, use plain text (Prism can render short content invisibly). */
+const MIN_LENGTH_FOR_PRISM = 5;
 
 // DOM elements
 const tabsContainer = document.getElementById('tabs');
@@ -199,11 +201,12 @@ function setEditorTextPlain(text) {
  * Use when cursor position doesn't matter (load, switch, format, clear).
  */
 function safeSetHTML(element, html) {
-  const doc = new DOMParser().parseFromString(html, 'text/html');
-  element.textContent = '';
-  while (doc.body.firstChild) {
-    element.appendChild(doc.body.firstChild);
-  }
+  element.innerHTML = html;
+}
+
+/** Use plain text when content is too short for Prism (avoids invisible output). */
+function shouldUsePlainText(text) {
+  return !text || text.length < MIN_LENGTH_FOR_PRISM;
 }
 
 function setEditorTextHighlighted(text, clearFolds = true) {
@@ -212,7 +215,11 @@ function setEditorTextHighlighted(text, clearFolds = true) {
   if (clearFolds) foldedLines.clear();
   if (text.trim()) {
     try {
-      safeSetHTML(editorCode, Prism.highlight(text, Prism.languages.json, 'json'));
+      if (shouldUsePlainText(text)) {
+        editorCode.textContent = text;
+      } else {
+        safeSetHTML(editorCode, Prism.highlight(text, Prism.languages.json, 'json'));
+      }
     } catch {
       editorCode.textContent = text;
     }
@@ -244,12 +251,22 @@ function appendTrailingBR(text) {
  */
 function reHighlight() {
   const text = getEditorText();
+  // #region agent log
+  if (text && text.trim() && text.length <= 3) {
+    const html = Prism.highlight(text, Prism.languages.json, 'json');
+    fetch('http://127.0.0.1:7244/ingest/83038061-d1d3-431b-abcf-197c7d6bb243',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'9bf3b1'},body:JSON.stringify({sessionId:'9bf3b1',location:'sidepanel.js:reHighlight',message:'reHighlight short content',data:{text:JSON.stringify(text),htmlLen:html?.length,startsWithBrace:text.trimStart().startsWith('{')},timestamp:Date.now(),hypothesisId:'H3'})}).catch(()=>{});
+  }
+  // #endregion
   if (!text.trim()) return;
 
   const offset = getCaretCharOffset(editorCode);
 
   try {
-    safeSetHTML(editorCode, Prism.highlight(text, Prism.languages.json, 'json'));
+    if (shouldUsePlainText(text)) {
+      editorCode.textContent = text;
+    } else {
+      safeSetHTML(editorCode, Prism.highlight(text, Prism.languages.json, 'json'));
+    }
   } catch {
     editorCode.textContent = text;
   }
@@ -325,6 +342,11 @@ function setCaretCharOffset(element, targetOffset) {
 }
 
 function updatePlaceholder(text) {
+  // #region agent log
+  if (text && text.trim() && text.length <= 3) {
+    fetch('http://127.0.0.1:7244/ingest/83038061-d1d3-431b-abcf-197c7d6bb243',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'9bf3b1'},body:JSON.stringify({sessionId:'9bf3b1',location:'sidepanel.js:updatePlaceholder',message:'updatePlaceholder short content',data:{text:JSON.stringify(text),willHide:!!(text&&text.trim())},timestamp:Date.now(),hypothesisId:'H3'})}).catch(()=>{});
+  }
+  // #endregion
   if (!text || !text.trim()) {
     editorPlaceholder.classList.remove('hidden');
   } else {
@@ -367,6 +389,9 @@ function performUndo() {
 }
 
 function performRedo() {
+  // #region agent log
+  fetch('http://127.0.0.1:7244/ingest/83038061-d1d3-431b-abcf-197c7d6bb243',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'9bf3b1'},body:JSON.stringify({sessionId:'9bf3b1',location:'sidepanel.js:performRedo',message:'performRedo called',data:{redoStackLen:redoStack.length,bailed:redoStack.length===0},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
+  // #endregion
   if (redoStack.length === 0) return;
   undoStack.push(getEditorText());
   const next = redoStack.pop();
@@ -411,6 +436,9 @@ async function loadTabs() {
     activeTabId = tabs[0].id;
     await saveTabs();
   }
+  // #region agent log
+  fetch('http://127.0.0.1:7244/ingest/83038061-d1d3-431b-abcf-197c7d6bb243',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'9bf3b1'},body:JSON.stringify({sessionId:'9bf3b1',location:'sidepanel.js:loadTabs',message:'loadTabs done',data:{tabsCount:tabs.length,firstTabContentLen:(tabs[0]?.content||'').length},timestamp:Date.now(),hypothesisId:'H2'})}).catch(()=>{});
+  // #endregion
 }
 
 /**
@@ -661,6 +689,12 @@ function validateJson() {
     validationEl.removeAttribute('title');
     return { valid: false };
   }
+  if (text.length < MIN_LENGTH_FOR_PRISM) {
+    validationEl.textContent = 'Add more characters for syntax highlighting';
+    validationEl.className = 'validation info';
+    validationEl.removeAttribute('title');
+    return { valid: false };
+  }
   try {
     JSON.parse(text);
     validationEl.textContent = 'Valid JSON';
@@ -725,11 +759,14 @@ function onEditorInput() {
   formatBtn.disabled = !result.valid;
   updateCollapseExpandButtons();
 
-  // Debounced re-highlight (longer delay to preserve undo/redo)
+  // For invalid JSON, apply plain text immediately so content is visible (avoids invisible typing)
   clearTimeout(highlightTimer);
-  highlightTimer = setTimeout(() => {
+  if (shouldUsePlainText(text)) {
+    highlightTimer = null;
     reHighlight();
-  }, HIGHLIGHT_DEBOUNCE_MS);
+  } else {
+    highlightTimer = setTimeout(() => reHighlight(), HIGHLIGHT_DEBOUNCE_MS);
+  }
 
   // Debounced save
   clearTimeout(debounceTimer);
@@ -785,9 +822,14 @@ function insertAtCursor(chars) {
 }
 
 function onEditorKeydown(e) {
-  if (e.key === 'z' || e.key === 'y') {
+  // #region agent log
+  if ((e.key === 'z' || e.key === 'y') && e.ctrlKey) {
+    fetch('http://127.0.0.1:7244/ingest/83038061-d1d3-431b-abcf-197c7d6bb243',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'9bf3b1'},body:JSON.stringify({sessionId:'9bf3b1',location:'sidepanel.js:onEditorKeydown',message:'Ctrl+Z/Y keydown',data:{key:e.key,shift:e.shiftKey,redoStackLen:redoStack.length,undoStackLen:undoStack.length,editorFocused:document.activeElement===editor},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
+  }
+  // #endregion
+  if (e.key === 'z' || e.key === 'y' || e.key === 'Z') {
     if (e.ctrlKey || e.metaKey) {
-      if (e.shiftKey && e.key === 'z') {
+      if (e.shiftKey && (e.key === 'z' || e.key === 'Z')) {
         e.preventDefault();
         performRedo();
         return;
@@ -1388,6 +1430,12 @@ async function init() {
 
   document.addEventListener('keydown', (e) => {
     if (e.ctrlKey || e.metaKey) {
+      if (e.shiftKey && (e.key === 'z' || e.key === 'Z')) {
+        if (editor.contains(document.activeElement)) {
+          e.preventDefault();
+          performRedo();
+        }
+      }
       if (e.shiftKey && e.key === 'F') { e.preventDefault(); formatContent(); }
       if (e.shiftKey && e.key === 'M') { e.preventDefault(); minifyContent(); }
       if (e.shiftKey && e.key === 'X') { e.preventDefault(); clearContent(); }
@@ -1451,11 +1499,37 @@ async function init() {
   function saveBeforeClose() {
     flushActiveTab();
     if (hasStorage()) {
+      try {
+        chrome.storage.local.set({ tabs, [LAST_ACTIVE_TAB_KEY]: activeTabId });
+      } catch (_) {}
       chrome.runtime.sendMessage({ type: 'saveTabs', tabs, lastActiveTabId: activeTabId }).catch(() => {});
     }
   }
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden') saveBeforeClose();
+  document.addEventListener('visibilitychange', async () => {
+    if (document.visibilityState === 'hidden') {
+      saveBeforeClose();
+    } else if (document.visibilityState === 'visible' && hasStorage()) {
+      // Reload from storage when panel becomes visible (helps Firefox when sidebar is reopened)
+      const result = await chrome.storage.local.get(['tabs', LAST_ACTIVE_TAB_KEY]);
+      if (result.tabs && result.tabs.length > 0) {
+        tabs = result.tabs
+          .filter((t) => t && typeof t.id === 'string')
+          .map((t) => ({
+            id: t.id,
+            content: typeof t.content === 'string' ? t.content : '',
+            title: typeof t.title === 'string' ? t.title : ''
+          }));
+        activeTabId = result[LAST_ACTIVE_TAB_KEY] || tabs[0]?.id;
+        const activeTab = tabs.find((t) => t.id === activeTabId);
+        setEditorTextHighlighted(activeTab?.content || '');
+        renderTabs();
+        updateLineNumbers();
+        updateStatusBar();
+        validateJson();
+        formatBtn.disabled = !validateJson().valid;
+        updateCollapseExpandButtons();
+      }
+    }
   });
   window.addEventListener('pagehide', saveBeforeClose);
 }
