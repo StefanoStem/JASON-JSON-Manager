@@ -11,6 +11,7 @@
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="MIT License"></a>
+  <img src="https://img.shields.io/badge/version-1.1.0-brightgreen.svg" alt="Version 1.1.0">
   <img src="https://img.shields.io/badge/manifest-v3-blue.svg" alt="Manifest V3">
   <img src="https://img.shields.io/badge/no_frameworks-vanilla_JS-orange.svg" alt="Vanilla JS">
 </p>
@@ -24,6 +25,12 @@
 - **Syntax highlighting** -- color-coded JSON via [Prism.js](https://prismjs.com/)
 - **Live validation** -- instant feedback as you type
 - **Format** -- pretty-print with 2-space indentation
+- **Minify** -- collapse JSON to a single line (Ctrl+Shift+M)
+- **Undo / Redo** -- full undo history per tab (Ctrl+Z / Ctrl+Shift+Z)
+- **Download** -- save the current snippet as a `.json` file
+- **Duplicate** -- clone the current tab's content into a new tab
+- **Folding** -- collapse and expand JSON blocks with gutter arrows
+- **Theme** -- light/dark mode toggle that persists across sessions
 - **Line numbers** -- synced scrolling with the editor
 - **Copy / Clear** -- one-click clipboard copy and clear
 - **Drag & drop** -- drop text from any page into the editor
@@ -49,7 +56,7 @@ To run from source (e.g. for development):
 
 **Firefox:** `about:debugging#/runtime/this-firefox` → **Load Temporary Add-on** → select `build/firefox/manifest.json`
 
-Build the project first:
+**Run `./build.sh` first** to produce fresh build output (required for testing):
 
 ```bash
 git clone https://github.com/StefanoStem/JASON-JSON-Manager.git
@@ -63,6 +70,40 @@ cd JASON-JSON-Manager
 | `build/firefox/` | Unpacked extension for Firefox |
 | `build/jason-chrome.zip` | For Chrome Web Store submission |
 | `build/jason-firefox.zip` | For Firefox Add-ons submission |
+
+### Release workflow
+
+**Run a fresh build before QA or publishing.** Stale build artifacts cause manifest-sync failures and inconsistent tested artifacts.
+
+1. **Always run `./build.sh`** to regenerate `build/*/` from source before testing or releasing. The built `manifest.json` files are copied from `manifests/*.json` — do not edit `build/*/manifest.json` manually.
+2. The build script verifies that `build/*/manifest.json` matches `manifests/*.json` and fails if they diverge.
+3. Load the extension from `build/chrome` or `build/firefox` for QA, then submit the corresponding zip for publishing.
+
+## What's new in 1.1.0
+
+### New features
+
+- **Undo / Redo** — full undo history per tab; Ctrl+Z to undo, Ctrl+Shift+Z to redo
+- **Minify** — new toolbar button and Ctrl+Shift+M shortcut to collapse JSON to a single line
+- **Download** — save the current snippet directly as a `.json` file
+- **Duplicate** — create a new tab pre-filled with the current tab's content
+- **Folding** — VS Code-style collapse/expand for JSON objects and arrays via gutter arrows
+- **Theme toggle** — switch between light and dark mode with the sun/moon icon; choice persists across sessions
+- **Always-open editor** — the editor now always starts with at least one tab so it's ready to use immediately
+
+### Bug fixes
+
+- Fixed invisible editor content after deleting all text (browser detaching `<code>` from `<pre>`)
+- Fixed ghost text appearing when placeholder node was merged into editor content
+- Fixed invisible text and broken Ctrl+Shift+Z redo after certain edit sequences
+- Fixed Firefox sidebar losing content between sessions
+
+### Internal
+
+- Removed Edge support
+- Tightened Content Security Policy
+- Build script now supports `DEBUG=1` mode for local development with a browser mock (`debug.html`)
+- Brighter sage/orange accent colors for improved contrast
 
 ## How it works
 

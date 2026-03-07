@@ -3,15 +3,25 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>JASON - JSON Snippet Manager</title>
+  <title>JASON Debug - localhost</title>
   <link rel="stylesheet" href="prism-tomorrow.css?v=3">
   <link rel="stylesheet" href="sidepanel.css?v=3">
 </head>
 <body>
+  <script>
+    /* Mock chrome APIs for localhost testing (no extension context) */
+    window.chrome = window.chrome || {};
+    window.chrome.storage = window.chrome.storage || {};
+    window.chrome.storage.local = {
+      get: async (keys) => ({}),
+      set: async () => {}
+    };
+    window.chrome.runtime = window.chrome.runtime || { sendMessage: () => Promise.resolve({}) };
+  </script>
   <div class="app">
     <header class="header">
       <div class="header-title-row">
-        <h1 class="title">JASON (JSON MANAGER)</h1>
+        <h1 class="title">JASON (JSON MANAGER) [DEBUG]</h1>
         <button class="theme-toggle" id="themeToggle" type="button" aria-label="Toggle light/dark theme" title="Switch to light theme">
           <svg class="theme-icon theme-icon-sun" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
           <svg class="theme-icon theme-icon-moon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
