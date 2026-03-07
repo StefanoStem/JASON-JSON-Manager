@@ -707,6 +707,19 @@ pre.editor:focus {
   color: #c4a080;
 }
 
+.validation.info {
+  color: var(--text-secondary);
+  font-weight: normal;
+}
+
+#validation.info::before {
+  content: 'ℹ';
+  display: inline-block;
+  font-size: 12px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
 #validation.warning::before {
   content: '';
   display: inline-block;
