@@ -408,6 +408,7 @@ async function loadTabs() {
   }
   if (tabs.length === 0) {
     tabs = [{ id: generateId(), content: '', title: '' }];
+    activeTabId = tabs[0].id;
     await saveTabs();
   }
 }
@@ -601,10 +602,9 @@ async function deleteTab(id) {
     formatBtn.disabled = !res.valid;
     updateCollapseExpandButtons();
 
-    if (tabs.length === 1 && !newTab?.content?.trim()) {
-      editorContainer.classList.add('hidden');
-      emptyState.classList.remove('hidden');
-    }
+    // Always show editor when we have at least one tab (never show empty state)
+    editorContainer.classList.remove('hidden');
+    emptyState.classList.add('hidden');
   }
 
   renderTabs();
