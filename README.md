@@ -31,6 +31,9 @@
 - **Duplicate** -- clone the current tab's content into a new tab
 - **Folding** -- collapse and expand JSON blocks with gutter arrows
 - **Theme** -- light/dark mode toggle that persists across sessions
+- **Size indicator** -- real-time byte count shown in the status bar as you type
+- **In-flight validation** -- JSON is validated every 500 ms while you edit, so errors are caught as you fix them rather than only on blur
+- **Persistent sidebar** -- tabs and content survive closing and reopening the sidebar, and are shared across all pages in the same browser session
 - **Line numbers** -- synced scrolling with the editor
 - **Copy / Clear** -- one-click clipboard copy and clear
 - **Drag & drop** -- drop text from any page into the editor
@@ -90,6 +93,9 @@ cd JASON-JSON-Manager
 - **Folding** — VS Code-style collapse/expand for JSON objects and arrays via gutter arrows
 - **Theme toggle** — switch between light and dark mode with the sun/moon icon; choice persists across sessions
 - **Always-open editor** — the editor now always starts with at least one tab so it's ready to use immediately
+- **Real-time size indicator** — byte count updates live in the status bar as you type
+- **In-flight validation** — JSON is re-validated every 500 ms during editing so errors are highlighted as you correct them, not just on save or blur
+- **Persistent sidebar across pages** — tabs and all content remain intact when you close and reopen the sidebar, and are shared across every page in the same browser session
 
 ### Bug fixes
 
