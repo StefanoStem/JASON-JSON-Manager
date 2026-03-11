@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="MIT License"></a>
-  <img src="https://img.shields.io/badge/version-1.1.0-brightgreen.svg" alt="Version 1.1.0">
+  <img src="https://img.shields.io/badge/version-1.1.2-brightgreen.svg" alt="Version 1.1.2">
   <img src="https://img.shields.io/badge/manifest-v3-blue.svg" alt="Manifest V3">
   <img src="https://img.shields.io/badge/no_frameworks-vanilla_JS-orange.svg" alt="Vanilla JS">
 </p>
@@ -79,7 +79,15 @@ cd JASON-JSON-Manager
 2. The build script verifies that `build/*/manifest.json` matches `manifests/*.json` and fails if they diverge.
 3. Load the extension from `build/chrome` or `build/firefox` for QA, then submit the corresponding zip for publishing.
 
-## What's new in 1.1.0
+## What's new in 1.1.2
+
+### Patch fixes in 1.1.2
+
+- Fixed duplicate paste after clearing and re-pasting JSON (same paste event being handled twice)
+
+---
+
+### Features introduced in 1.1.0
 
 ### New features
 
