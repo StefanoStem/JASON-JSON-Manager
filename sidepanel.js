@@ -59,6 +59,82 @@ function hasStorage() {
   return typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local;
 }
 
+function storageGet(keys) {
+  return new Promise((resolve, reject) => {
+    if (!hasStorage()) {
+      resolve({});
+      return;
+    }
+    try {
+      const maybePromise = chrome.storage.local.get(keys, (result) => {
+        const err = chrome.runtime && chrome.runtime.lastError;
+        if (err) {
+          reject(new Error(err.message || String(err)));
+          return;
+        }
+        resolve(result || {});
+      });
+      if (maybePromise && typeof maybePromise.then === 'function') {
+        maybePromise.then((result) => resolve(result || {})).catch(reject);
+      }
+    } catch (err) {
+      reject(err);
+    }
+  });
+}
+
+function storageSet(value) {
+  return new Promise((resolve, reject) => {
+    if (!hasStorage()) {
+      resolve();
+      return;
+    }
+    try {
+      const maybePromise = chrome.storage.local.set(value, () => {
+        const err = chrome.runtime && chrome.runtime.lastError;
+        if (err) {
+          reject(new Error(err.message || String(err)));
+          return;
+        }
+        resolve();
+      });
+      if (maybePromise && typeof maybePromise.then === 'function') {
+        maybePromise.then(() => resolve()).catch(reject);
+      }
+    } catch (err) {
+      reject(err);
+    }
+  });
+}
+
+function sendRuntimeMessage(message) {
+  return new Promise((resolve) => {
+    let settled = false;
+    function finish(value) {
+      if (settled) return;
+      settled = true;
+      resolve(value);
+    }
+    try {
+      const maybePromise = chrome.runtime.sendMessage(message, (response) => {
+        const err = chrome.runtime && chrome.runtime.lastError;
+        if (err) {
+          finish(null);
+          return;
+        }
+        finish(response);
+      });
+      if (maybePromise && typeof maybePromise.then === 'function') {
+        maybePromise.then((response) => finish(response)).catch(() => finish(null));
+      } else {
+        setTimeout(() => finish(null), 300);
+      }
+    } catch (_) {
+      finish(null);
+    }
+  });
+}
+
 // ─── Theme ─────────────────────────────────────────────────
 
 function applyTheme(theme) {
@@ -72,7 +148,7 @@ function applyTheme(theme) {
 async function loadTheme() {
   if (!hasStorage()) return 'dark';
   try {
-    const result = await chrome.storage.local.get([THEME_KEY]);
+    const result = await storageGet([THEME_KEY]);
     return result[THEME_KEY] === 'light' ? 'light' : 'dark';
   } catch {
     return 'dark';
@@ -85,7 +161,7 @@ async function toggleTheme() {
   applyTheme(next);
   if (hasStorage()) {
     try {
-      await chrome.storage.local.set({ [THEME_KEY]: next });
+      await storageSet({ [THEME_KEY]: next });
     } catch (err) {
       console.error('Failed to save theme:', err);
     }
@@ -388,7 +464,7 @@ function performRedo() {
 async function saveTabs() {
   if (!hasStorage()) return;
   try {
-    await chrome.storage.local.set({ tabs, [LAST_ACTIVE_TAB_KEY]: activeTabId });
+    await storageSet({ tabs, [LAST_ACTIVE_TAB_KEY]: activeTabId });
   } catch (err) {
     console.error('Failed to save tabs:', err);
     validationEl.textContent = '⚠️ Could not save to storage. Changes may not persist.';
@@ -403,7 +479,7 @@ async function loadTabs() {
     return;
   }
   try {
-    const result = await chrome.storage.local.get(['tabs', LAST_ACTIVE_TAB_KEY]);
+    const result = await storageGet(['tabs', LAST_ACTIVE_TAB_KEY]);
     tabs = (result.tabs || [])
       .filter((t) => t && typeof t.id === 'string')
       .map((t) => ({
@@ -893,6 +969,7 @@ function onEditorKeydown(e) {
 
 function onEditorPaste(e) {
   e.preventDefault();
+  e.stopPropagation();
   const pastedText = e.clipboardData?.getData('text/plain') || '';
   if (!pastedText) return;
 
@@ -1336,6 +1413,9 @@ function setupDropZone(el) {
 // ─── Paste on content area (outside editor) ─────────────────
 
 function onGlobalPaste(e) {
+  // If another handler already consumed this paste event, do nothing.
+  if (e.defaultPrevented) return;
+
   // If paste is inside the editor, the editor's own paste handler deals with it
   if (editor.contains(e.target)) return;
 
@@ -1465,13 +1545,15 @@ async function init() {
   function saveBeforeClose() {
     flushActiveTab();
     if (hasStorage()) {
-      chrome.runtime.sendMessage({ type: 'saveTabs', tabs, lastActiveTabId: activeTabId }).catch(() => {});
+      storageSet({ tabs, [LAST_ACTIVE_TAB_KEY]: activeTabId }).catch(() => {});
+      sendRuntimeMessage({ type: 'saveTabs', tabs, lastActiveTabId: activeTabId }).catch(() => {});
     }
   }
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') saveBeforeClose();
   });
   window.addEventListener('pagehide', saveBeforeClose);
+  window.addEventListener('beforeunload', saveBeforeClose);
 }
 
 init();
