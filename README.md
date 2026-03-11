@@ -11,8 +11,8 @@
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="MIT License"></a>
-  <img src="https://img.shields.io/badge/chrome-v1.1.0-brightgreen.svg" alt="Chrome v1.1.0">
-  <img src="https://img.shields.io/badge/firefox-v1.1.1-orange.svg" alt="Firefox v1.1.1">
+  <img src="https://img.shields.io/badge/chrome-v1.1.2-brightgreen.svg" alt="Chrome v1.1.2">
+  <img src="https://img.shields.io/badge/firefox-v1.1.2-orange.svg" alt="Firefox v1.1.2">
   <img src="https://img.shields.io/badge/manifest-v3-blue.svg" alt="Manifest V3">
   <img src="https://img.shields.io/badge/no_frameworks-vanilla_JS-yellow.svg" alt="Vanilla JS">
 </p>
@@ -47,8 +47,8 @@ Install from the official stores:
 
 | Browser | Version | Install |
 |--------|--------|--------|
-| **Chrome** | 1.1.0 | [Chrome Web Store](https://chromewebstore.google.com/detail/jason-json-manager/lmagkaeimimgfafdeifljdiaekkljbnk) |
-| **Firefox** | 1.1.1 | [Firefox Add-ons](https://addons.mozilla.org/en-US/firefox/addon/jason-json-manager/) |
+| **Chrome** | 1.1.2 | [Chrome Web Store](https://chromewebstore.google.com/detail/jason-json-manager/lmagkaeimimgfafdeifljdiaekkljbnk) |
+| **Firefox** | 1.1.2 | [Firefox Add-ons](https://addons.mozilla.org/en-US/firefox/addon/jason-json-manager/) |
 
 No zip files or developer mode needed for normal use.
 
@@ -83,7 +83,15 @@ cd JASON-JSON-Manager
 2. The build script verifies that `build/*/manifest.json` matches `manifests/*.json` and fails if they diverge.
 3. Load the extension from `build/chrome` or `build/firefox` for QA, then submit the corresponding zip for publishing.
 
-## What's new in 1.1.0 / 1.1.1
+## What's new in 1.1.2
+
+### Patch fixes in 1.1.2
+
+- Fixed duplicate paste after clearing and re-pasting JSON (same paste event being handled twice)
+
+---
+
+### Features introduced in 1.1.0
 
 ### New features
 
@@ -112,7 +120,7 @@ cd JASON-JSON-Manager
 - Build script now supports `DEBUG=1` mode for local development with a browser mock (`debug.html`)
 - Brighter sage/orange accent colors for improved contrast
 
-> **Note:** Firefox ships as v1.1.1 (functionally identical to Chrome v1.1.0).
+> **Note:** Chrome and Firefox now ship as v1.1.2.
 
 ## How it works
 
