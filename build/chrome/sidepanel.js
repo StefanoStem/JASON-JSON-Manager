@@ -588,6 +588,7 @@ function renderTabs() {
 function startEditTabTitle(tab, labelEl) {
   if (editingTabId) return;
   editingTabId = tab.id;
+  const originalTitle = tab.title || '';
 
   const input = document.createElement('input');
   input.className = 'tab-title-input';
@@ -599,19 +600,28 @@ function startEditTabTitle(tab, labelEl) {
   input.focus();
   input.select();
 
-  function finishEdit() {
-    if (!editingTabId) return;
+  function finishEdit(shouldCommit = true) {
+    if (editingTabId !== tab.id) return;
     const t = tabs.find((x) => x.id === tab.id);
-    if (t) t.title = input.value.trim();
+    if (t) {
+      t.title = shouldCommit ? input.value.trim() : originalTitle;
+    }
     editingTabId = null;
     saveTabs();
     renderTabs();
   }
 
-  input.addEventListener('blur', finishEdit);
+  input.addEventListener('blur', () => finishEdit(true));
   input.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
-    if (e.key === 'Escape') { input.value = tab.title || getTabLabel(tab); input.blur(); }
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      finishEdit(true);
+      return;
+    }
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      finishEdit(false);
+    }
   });
 }
 
