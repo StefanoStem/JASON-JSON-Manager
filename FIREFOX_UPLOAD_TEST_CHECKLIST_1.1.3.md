@@ -1,4 +1,4 @@
-# Firefox Upload + QA Checklist (v1.1.2)
+# Firefox Upload + QA Checklist (v1.1.3)
 
 Use this checklist to prepare the Firefox package, validate regressions, and submit to AMO.
 

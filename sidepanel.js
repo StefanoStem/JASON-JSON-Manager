@@ -518,6 +518,10 @@ function flushActiveTab() {
 // ─── Tabs ───────────────────────────────────────────────────
 
 function renderTabs() {
+  if (editingTabId && !tabsContainer.querySelector('.tab-title-input')) {
+    editingTabId = null;
+  }
+
   tabsContainer.textContent = '';  tabs.forEach((tab) => {
     const tabEl = document.createElement('div');
     const isActive = tab.id === activeTabId;
@@ -542,6 +546,8 @@ function renderTabs() {
 
     tabEl.addEventListener('click', (e) => {
       if (e.target === closeBtn) return;
+      if (e.target && e.target.closest && e.target.closest('.tab-title-input')) return;
+      if (tab.id === activeTabId) return;
       switchTab(tab.id);
     });
 
@@ -586,7 +592,14 @@ function renderTabs() {
 }
 
 function startEditTabTitle(tab, labelEl) {
-  if (editingTabId) return;
+  if (editingTabId) {
+    const activeTitleInput = tabsContainer.querySelector('.tab-title-input');
+    if (!activeTitleInput || !activeTitleInput.isConnected) {
+      editingTabId = null;
+    } else {
+      return;
+    }
+  }
   editingTabId = tab.id;
   const originalTitle = tab.title || '';
 
@@ -600,8 +613,16 @@ function startEditTabTitle(tab, labelEl) {
   input.focus();
   input.select();
 
+  let finished = false;
   function finishEdit(shouldCommit = true) {
-    if (editingTabId !== tab.id) return;
+    if (finished || editingTabId !== tab.id) return;
+    finished = true;
+    document.removeEventListener('pointerdown', onOutsideInteract, true);
+    document.removeEventListener('mousedown', onOutsideInteract, true);
+    document.removeEventListener('touchstart', onOutsideInteract, true);
+    document.removeEventListener('click', onOutsideInteract, true);
+    document.removeEventListener('focusin', onOutsideInteract, true);
+    window.removeEventListener('blur', onWindowBlur, true);
     const t = tabs.find((x) => x.id === tab.id);
     if (t) {
       t.title = shouldCommit ? input.value.trim() : originalTitle;
@@ -611,6 +632,21 @@ function startEditTabTitle(tab, labelEl) {
     renderTabs();
   }
 
+  function onOutsideInteract(e) {
+    if (e.target === input || input.contains(e.target)) return;
+    finishEdit(true);
+  }
+
+  function onWindowBlur() {
+    finishEdit(true);
+  }
+
+  document.addEventListener('pointerdown', onOutsideInteract, true);
+  document.addEventListener('mousedown', onOutsideInteract, true);
+  document.addEventListener('touchstart', onOutsideInteract, true);
+  document.addEventListener('click', onOutsideInteract, true);
+  document.addEventListener('focusin', onOutsideInteract, true);
+  window.addEventListener('blur', onWindowBlur, true);
   input.addEventListener('blur', () => finishEdit(true));
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {

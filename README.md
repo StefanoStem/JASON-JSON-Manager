@@ -78,7 +78,16 @@ cd JASON-JSON-Manager
 1. **Always run `./build.sh`** to regenerate `build/*/` from source before testing or releasing. The built `manifest.json` files are copied from `manifests/*.json` — do not edit `build/*/manifest.json` manually.
 2. The build script verifies that `build/*/manifest.json` matches `manifests/*.json` and fails if they diverge.
 3. Load the extension from `build/chrome` or `build/firefox` for QA, then submit the corresponding zip for publishing.
-4. For Firefox QA and AMO upload prep, follow `FIREFOX_UPLOAD_TEST_CHECKLIST_1.1.2.md`.
+4. For Firefox QA and AMO upload prep, follow `FIREFOX_UPLOAD_TEST_CHECKLIST_1.1.3.md`.
+
+## What's new in 1.1.3
+
+### Patch fixes in 1.1.3
+
+- Fixed Firefox tab title editing getting locked on the same tab after click-away/no-change interactions
+- Prevented same-tab clicks from re-triggering tab switch during rename, which could detach the edit input and leave stale rename state
+
+---
 
 ## What's new in 1.1.2
 
