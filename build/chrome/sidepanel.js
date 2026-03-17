@@ -518,6 +518,10 @@ function flushActiveTab() {
 // ─── Tabs ───────────────────────────────────────────────────
 
 function renderTabs() {
+  if (editingTabId && !tabsContainer.querySelector('.tab-title-input')) {
+    editingTabId = null;
+  }
+
   tabsContainer.textContent = '';  tabs.forEach((tab) => {
     const tabEl = document.createElement('div');
     const isActive = tab.id === activeTabId;
@@ -542,6 +546,8 @@ function renderTabs() {
 
     tabEl.addEventListener('click', (e) => {
       if (e.target === closeBtn) return;
+      if (e.target && e.target.closest && e.target.closest('.tab-title-input')) return;
+      if (tab.id === activeTabId) return;
       switchTab(tab.id);
     });
 
@@ -586,8 +592,16 @@ function renderTabs() {
 }
 
 function startEditTabTitle(tab, labelEl) {
-  if (editingTabId) return;
+  if (editingTabId) {
+    const activeTitleInput = tabsContainer.querySelector('.tab-title-input');
+    if (!activeTitleInput || !activeTitleInput.isConnected) {
+      editingTabId = null;
+    } else {
+      return;
+    }
+  }
   editingTabId = tab.id;
+  const originalTitle = tab.title || '';
 
   const input = document.createElement('input');
   input.className = 'tab-title-input';
@@ -599,19 +613,51 @@ function startEditTabTitle(tab, labelEl) {
   input.focus();
   input.select();
 
-  function finishEdit() {
-    if (!editingTabId) return;
+  let finished = false;
+  function finishEdit(shouldCommit = true) {
+    if (finished || editingTabId !== tab.id) return;
+    finished = true;
+    document.removeEventListener('pointerdown', onOutsideInteract, true);
+    document.removeEventListener('mousedown', onOutsideInteract, true);
+    document.removeEventListener('touchstart', onOutsideInteract, true);
+    document.removeEventListener('click', onOutsideInteract, true);
+    document.removeEventListener('focusin', onOutsideInteract, true);
+    window.removeEventListener('blur', onWindowBlur, true);
     const t = tabs.find((x) => x.id === tab.id);
-    if (t) t.title = input.value.trim();
+    if (t) {
+      t.title = shouldCommit ? input.value.trim() : originalTitle;
+    }
     editingTabId = null;
     saveTabs();
     renderTabs();
   }
 
-  input.addEventListener('blur', finishEdit);
+  function onOutsideInteract(e) {
+    if (e.target === input || input.contains(e.target)) return;
+    finishEdit(true);
+  }
+
+  function onWindowBlur() {
+    finishEdit(true);
+  }
+
+  document.addEventListener('pointerdown', onOutsideInteract, true);
+  document.addEventListener('mousedown', onOutsideInteract, true);
+  document.addEventListener('touchstart', onOutsideInteract, true);
+  document.addEventListener('click', onOutsideInteract, true);
+  document.addEventListener('focusin', onOutsideInteract, true);
+  window.addEventListener('blur', onWindowBlur, true);
+  input.addEventListener('blur', () => finishEdit(true));
   input.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
-    if (e.key === 'Escape') { input.value = tab.title || getTabLabel(tab); input.blur(); }
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      finishEdit(true);
+      return;
+    }
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      finishEdit(false);
+    }
   });
 }
 
