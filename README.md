@@ -31,6 +31,9 @@
 - **Download** -- save the current snippet as a `.json` file
 - **Duplicate** -- clone the current tab's content into a new tab
 - **Folding** -- collapse and expand JSON blocks with gutter arrows
+- **Split compare mode** -- edit two JSON payloads side-by-side and highlight differing lines
+- **Sidebar search** -- filter tabs and captured responses instantly from one search bar
+- **Manual page scan capture** -- click Run Scan in Capture mode to collect JSON blocks from the current page
 - **Theme** -- light/dark mode toggle that persists across sessions
 - **Size indicator** -- real-time byte count shown in the status bar as you type
 - **In-flight validation** -- JSON is validated every 500 ms while you edit, so errors are caught as you fix them rather than only on blur
@@ -39,7 +42,7 @@
 - **Copy / Clear** -- one-click clipboard copy and clear
 - **Drag & drop** -- drop text from any page into the editor
 - **Auto-save** -- all content persists across browser sessions
-- **Privacy first** -- no data collection, no network requests, everything stays local
+- **Privacy first** -- no data collection, no third-party telemetry, everything stays local
 
 ## Install
 
@@ -83,25 +86,7 @@ cd JASON-JSON-Manager
 2. The build script verifies that `build/*/manifest.json` matches `manifests/*.json` and fails if they diverge.
 3. Load the extension from `build/chrome` or `build/firefox` for QA, then submit the corresponding zip for publishing.
 
-## What's new in 1.1.3
-
-### Patch fixes in 1.1.3
-
-- Fixed Firefox tab title editing getting locked on the same tab after click-away/no-change interactions
-- Prevented same-tab clicks from re-triggering tab switch during rename, which could detach the edit input and leave stale rename state
-
----
-
 ## What's new in 1.1.2
-
-### Patch fixes in 1.1.2
-
-- Fixed duplicate paste after clearing and re-pasting JSON (same paste event being handled twice)
-- Fixed Firefox tab rename lock after cancel (`Esc`) so tab titles can be edited again without reopening the sidebar
-
----
-
-### Features introduced in 1.1.0
 
 ### New features
 
@@ -134,7 +119,7 @@ cd JASON-JSON-Manager
 
 ## How it works
 
-The shared source (`sidepanel.js`, `sidepanel.html`, `sidepanel.css`) lives in the project root. `build.sh` copies it alongside browser-specific manifests and background scripts into each build folder. No bundlers, no transpilers -- just a copy.
+The shared source (`sidepanel.js`, `sidepanel.html`, `sidepanel.css`) lives in the project root. `build.sh` copies it alongside browser-specific manifests, capture scripts, and background scripts into each build folder. No bundlers, no transpilers -- just a copy.
 
 | | Chrome | Firefox |
 |---|---|---|

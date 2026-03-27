@@ -28,6 +28,7 @@ SHARED=(
   prism.js
   prism-json.js
   prism-tomorrow.css
+  content-capture.js
   icons
 )
 

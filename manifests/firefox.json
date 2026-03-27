@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "JASON for Firefox",
-  "version": "1.1.3",
+  "version": "1.1.2",
   "description": "Quick sidebar for saving and managing JSON snippets",
   "content_security_policy": "default-src 'self'; connect-src 'none'; script-src 'self'; object-src 'none'",
   "icons": {
@@ -18,7 +18,14 @@
       "32": "icons/icon32.png"
     }
   },
-  "permissions": ["storage"],
+  "permissions": ["storage", "tabs", "<all_urls>"],
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content-capture.js"],
+      "run_at": "document_start"
+    }
+  ],
   "background": {
     "scripts": ["background.js"]
   },

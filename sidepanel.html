@@ -17,7 +17,13 @@
           <svg class="theme-icon theme-icon-moon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
         </button>
       </div>
-      <div class="tabs-row">
+      <div class="utility-row">
+        <input class="sidebar-search-input" id="sidebarSearch" type="search" placeholder="Search tabs and captures..." aria-label="Search tabs and captures">
+        <button class="btn btn-toolbar active" id="singleModeBtn" type="button" aria-pressed="true" title="Use store editor view">Store</button>
+        <button class="btn btn-toolbar" id="compareModeBtn" type="button" aria-pressed="false" title="Toggle split compare mode">Compare</button>
+        <button class="btn btn-toolbar" id="captureModeBtn" type="button" aria-pressed="false" title="Show captured responses">Capture</button>
+      </div>
+      <div class="tabs-row" id="tabsRow">
         <div class="tabs-container">
           <button class="tab-add" id="addTab" type="button" aria-label="Add new tab" title="Add new tab">+</button>
           <div class="tabs" id="tabs" role="tablist"></div>
@@ -34,6 +40,7 @@
           <div class="collapse-expand-row">
             <button class="btn btn-toolbar" id="collapseBtn" type="button" aria-label="Collapse all" title="Collapse all blocks" disabled>⊟ Collapse All</button>
             <button class="btn btn-toolbar" id="expandBtn" type="button" aria-label="Expand all" title="Expand all blocks" disabled>⊞ Expand All</button>
+            <button class="btn btn-toolbar btn-run-comparison hidden" id="runCompareBtn" type="button" aria-label="Compare both payloads" title="Compare both payloads">Run Comparison</button>
           </div>
           <div class="editor-panel" id="editorPanel">
             <div class="editor-wrapper">
@@ -46,8 +53,38 @@
               </div>
             </div>
           </div>
+          <div class="compare-panel hidden" id="comparePanel">
+            <div class="compare-editors">
+              <div class="compare-editor-column">
+                <label class="compare-label" for="compareLeftInput">Reference JSON</label>
+                <pre class="compare-input compare-editor" id="compareLeftInput" contenteditable="true" spellcheck="false" data-placeholder="Paste reference JSON here"></pre>
+                <button class="btn btn-toolbar compare-store-btn" id="storeLeftCompareBtn" type="button" title="Store reference JSON in a tab">Store</button>
+              </div>
+              <div class="compare-editor-column">
+                <label class="compare-label" for="compareRightInput">Candidate JSON</label>
+                <pre class="compare-input compare-editor" id="compareRightInput" contenteditable="true" spellcheck="false" data-placeholder="Paste candidate JSON here"></pre>
+                <button class="btn btn-toolbar compare-store-btn" id="storeRightCompareBtn" type="button" title="Store candidate JSON in a tab">Store</button>
+              </div>
+            </div>
+          </div>
+          <div class="capture-panel hidden" id="capturePanel">
+            <div class="capture-toolbar">
+              <button class="btn btn-toolbar" id="runCaptureScanBtn" type="button" title="Scan current page for JSON">Run Scan</button>
+              <button class="btn btn-toolbar" id="refreshCapturesBtn" type="button" title="Refresh captured responses">Refresh</button>
+              <button class="btn btn-toolbar" id="clearCapturesBtn" type="button" title="Clear captured responses for current tab">Clear</button>
+              <button class="btn btn-toolbar" id="storeSelectedCapturesBtn" type="button" title="Store selected captures as tabs" disabled>Store Selected</button>
+              <button class="btn btn-toolbar" id="compareSelectedCapturesBtn" type="button" title="Compare two selected captures" disabled>Compare Selected</button>
+            </div>
+            <div class="capture-layout">
+              <div class="capture-list" id="captureList"></div>
+              <div class="capture-detail">
+                <div class="capture-detail-meta" id="captureDetailMeta">Select a capture item to inspect JSON.</div>
+                <pre class="capture-detail-code" id="captureDetailCode"></pre>
+              </div>
+            </div>
+          </div>
           <div class="status-bar-row">
-            <span class="status-bar-validation" id="validation"></span>
+            <span class="validation" id="validation" aria-live="polite"></span>
             <span class="status-bar-size" id="statusBar"></span>
           </div>
           <div class="actions">
@@ -55,8 +92,10 @@
             <button class="btn btn-clear" id="clearBtn" title="Clear the editor and remove all content (Ctrl+Shift+X)">Clear</button>
             <button class="btn btn-format" id="formatBtn" title="Pretty-print JSON with indentation (Ctrl+Shift+F)">Format</button>
             <button class="btn btn-minify" id="minifyBtn" title="Compact JSON to a single line (Ctrl+Shift+M)">Minify</button>
+            <button class="btn btn-validate" id="validateBtn" title="Validate current JSON">Validate</button>
             <button class="btn btn-duplicate" id="duplicateBtn" title="Create a new tab with a copy of the current content">Duplicate</button>
             <button class="btn btn-download" id="downloadBtn" title="Download the JSON as a file">Download</button>
+            <button class="btn btn-toolbar" id="moveToCompareBtn" title="Send this JSON into Compare">Compare JSON</button>
           </div>
         </div>
       </div>
