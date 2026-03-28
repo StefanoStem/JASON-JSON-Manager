@@ -41,6 +41,7 @@
             <button class="btn btn-toolbar" id="collapseBtn" type="button" aria-label="Collapse all" title="Collapse all blocks" disabled>⊟ Collapse All</button>
             <button class="btn btn-toolbar" id="expandBtn" type="button" aria-label="Expand all" title="Expand all blocks" disabled>⊞ Expand All</button>
             <button class="btn btn-toolbar btn-run-comparison hidden" id="runCompareBtn" type="button" aria-label="Compare both payloads" title="Compare both payloads">Run Comparison</button>
+            <span class="compare-status hidden" id="compareStatus" aria-live="polite"></span>
           </div>
           <div class="editor-panel" id="editorPanel">
             <div class="editor-wrapper">
@@ -56,14 +57,20 @@
           <div class="compare-panel hidden" id="comparePanel">
             <div class="compare-editors">
               <div class="compare-editor-column">
-                <label class="compare-label" for="compareLeftInput">Reference JSON</label>
-                <pre class="compare-input compare-editor" id="compareLeftInput" contenteditable="true" spellcheck="false" data-placeholder="Paste reference JSON here"></pre>
-                <button class="btn btn-toolbar compare-store-btn" id="storeLeftCompareBtn" type="button" title="Store reference JSON in a tab">Store</button>
+                <label class="compare-label" for="compareLeftInput">First JSON</label>
+                <pre class="compare-input compare-editor" id="compareLeftInput" contenteditable="true" spellcheck="false" data-placeholder="Paste first JSON here"></pre>
+                <div class="compare-actions-row">
+                  <button class="btn btn-toolbar compare-store-btn" id="storeLeftCompareBtn" type="button" title="Store first JSON in a tab">Store</button>
+                  <button class="btn btn-toolbar compare-clear-btn" id="clearLeftCompareBtn" type="button" title="Clear first JSON">Clear</button>
+                </div>
               </div>
               <div class="compare-editor-column">
-                <label class="compare-label" for="compareRightInput">Candidate JSON</label>
-                <pre class="compare-input compare-editor" id="compareRightInput" contenteditable="true" spellcheck="false" data-placeholder="Paste candidate JSON here"></pre>
-                <button class="btn btn-toolbar compare-store-btn" id="storeRightCompareBtn" type="button" title="Store candidate JSON in a tab">Store</button>
+                <label class="compare-label" for="compareRightInput">Second JSON</label>
+                <pre class="compare-input compare-editor" id="compareRightInput" contenteditable="true" spellcheck="false" data-placeholder="Paste second JSON here"></pre>
+                <div class="compare-actions-row">
+                  <button class="btn btn-toolbar compare-store-btn" id="storeRightCompareBtn" type="button" title="Store second JSON in a tab">Store</button>
+                  <button class="btn btn-toolbar compare-clear-btn" id="clearRightCompareBtn" type="button" title="Clear second JSON">Clear</button>
+                </div>
               </div>
             </div>
           </div>

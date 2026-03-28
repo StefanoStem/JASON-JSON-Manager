@@ -17,6 +17,9 @@
   --danger-hover: #a63d3d;
   --editor-bg: #282828;
   --editor-row-stripe: rgba(255, 255, 255, 0.018);
+  --compare-diff-row-bg: rgba(255, 92, 92, 0.09);
+  --compare-diff-char-bg: rgba(255, 79, 79, 0.3);
+  --compare-diff-char-fg: #ff5b5b;
   --line-numbers-bg: #222222;
 }
 
@@ -47,6 +50,9 @@ body[data-theme="light"] {
   --danger-hover: #9a3d3d;
   --editor-bg: #faf8f5;
   --editor-row-stripe: rgba(30, 58, 95, 0.025);
+  --compare-diff-row-bg: rgba(196, 74, 74, 0.08);
+  --compare-diff-char-bg: rgba(196, 74, 74, 0.18);
+  --compare-diff-char-fg: #8d1111;
   --line-numbers-bg: #ebe6df;
 }
 
@@ -425,11 +431,52 @@ body {
   border-radius: 6px 6px 0 0;
 }
 
+.collapse-expand-row.is-compare {
+  border-bottom: 1px solid var(--border);
+  border-radius: 6px;
+}
+
 .btn-run-comparison {
   min-width: 190px;
   justify-content: center;
   margin-left: auto;
-  margin-right: auto;
+  margin-right: 8px;
+}
+
+.collapse-expand-row.is-compare .btn-run-comparison {
+  margin-left: 0;
+  margin-right: 0;
+}
+
+.compare-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  margin-left: 0;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+}
+
+.compare-status.is-neutral {
+  color: var(--text-secondary);
+}
+
+.compare-status.is-match {
+  color: #3ea572;
+  border-color: rgba(62, 165, 114, 0.45);
+  background: rgba(62, 165, 114, 0.12);
+}
+
+.compare-status.is-diff {
+  color: var(--danger);
+  border-color: rgba(196, 74, 74, 0.45);
+  background: rgba(196, 74, 74, 0.1);
 }
 
 .btn-toolbar {
@@ -891,7 +938,7 @@ pre.editor:focus {
 .compare-editor-column {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 10px;
   min-height: 0;
   min-width: 0;
   flex: 1 1 0;
@@ -912,6 +959,18 @@ pre.editor:focus {
 .compare-label {
   font-size: 12px;
   color: var(--text-secondary);
+  margin-top: 10px;
+  padding-bottom: 10px;
+}
+
+.compare-actions-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.compare-actions-row .btn {
+  min-height: 30px;
 }
 
 .compare-input {
@@ -921,7 +980,17 @@ pre.editor:focus {
   padding: 10px;
   border: 1px solid var(--border);
   border-radius: 6px;
-  background: var(--editor-bg);
+  background-color: var(--editor-bg);
+  background-image: repeating-linear-gradient(
+    to bottom,
+    transparent 0,
+    transparent 18px,
+    var(--editor-row-stripe) 18px,
+    var(--editor-row-stripe) 36px
+  );
+  background-attachment: local;
+  background-origin: content-box;
+  background-clip: content-box;
   color: var(--text-primary);
   font-family: ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, Consolas, monospace;
   font-size: 12px;
@@ -980,12 +1049,14 @@ pre.editor:focus {
 }
 
 .compare-line-diff {
-  background: rgba(196, 74, 74, 0.12);
+  background: var(--compare-diff-row-bg);
   border-left-color: var(--danger);
 }
 
 .compare-char-diff {
-  background: rgba(196, 74, 74, 0.24);
+  background: var(--compare-diff-char-bg);
+  color: var(--compare-diff-char-fg);
+  font-weight: 600;
   border-radius: 3px;
 }
 
@@ -1106,7 +1177,17 @@ mark.search-hit {
   margin: 0;
   padding: 10px;
   overflow: auto;
-  background: var(--editor-bg);
+  background-color: var(--editor-bg);
+  background-image: repeating-linear-gradient(
+    to bottom,
+    transparent 0,
+    transparent 18px,
+    var(--editor-row-stripe) 18px,
+    var(--editor-row-stripe) 36px
+  );
+  background-attachment: local;
+  background-origin: content-box;
+  background-clip: content-box;
   color: var(--text-primary);
   font-family: ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, Consolas, monospace;
   font-size: 12px;

@@ -33,6 +33,7 @@ const duplicateBtn = document.getElementById('duplicateBtn');
 const minifyBtn = document.getElementById('minifyBtn');
 const validateBtn = document.getElementById('validateBtn');
 const downloadBtn = document.getElementById('downloadBtn');
+const collapseExpandRow = document.querySelector('.collapse-expand-row');
 const statusBar = document.getElementById('statusBar');
 const statusBarRow = document.querySelector('.status-bar-row');
 const editorPanel = document.getElementById('editorPanel');
@@ -46,11 +47,14 @@ const singleModeBtn = document.getElementById('singleModeBtn');
 const compareModeBtn = document.getElementById('compareModeBtn');
 const captureModeBtn = document.getElementById('captureModeBtn');
 const runCompareBtn = document.getElementById('runCompareBtn');
+const compareStatus = document.getElementById('compareStatus');
 const comparePanel = document.getElementById('comparePanel');
 const compareLeftInput = document.getElementById('compareLeftInput');
 const compareRightInput = document.getElementById('compareRightInput');
 const storeLeftCompareBtn = document.getElementById('storeLeftCompareBtn');
 const storeRightCompareBtn = document.getElementById('storeRightCompareBtn');
+const clearLeftCompareBtn = document.getElementById('clearLeftCompareBtn');
+const clearRightCompareBtn = document.getElementById('clearRightCompareBtn');
 const capturePanel = document.getElementById('capturePanel');
 const tabsRow = document.getElementById('tabsRow');
 const captureList = document.getElementById('captureList');
@@ -145,6 +149,8 @@ function setMode(nextMode, options = {}) {
   if (capturePanel) capturePanel.classList.toggle('hidden', !isCaptures);
   if (tabsRow) tabsRow.classList.toggle('hidden', !isEditor);
   if (runCompareBtn) runCompareBtn.classList.toggle('hidden', !isCompare);
+  if (compareStatus) compareStatus.classList.toggle('hidden', !isCompare);
+  if (collapseExpandRow) collapseExpandRow.classList.toggle('is-compare', isCompare);
   if (collapseBtn) collapseBtn.classList.toggle('hidden', !isEditor);
   if (expandBtn) expandBtn.classList.toggle('hidden', !isEditor);
   if (statusBarRow) statusBarRow.classList.toggle('hidden', !isEditor);
@@ -183,6 +189,7 @@ function setMode(nextMode, options = {}) {
       compareRightInput.textContent = '';
       compareLeftInput.dataset.compareRendered = 'false';
       compareRightInput.dataset.compareRendered = 'false';
+      setCompareStatus('neutral', 'Ready to compare');
     }
   }
 
@@ -197,6 +204,19 @@ function setMode(nextMode, options = {}) {
 
   syncBottomActionButtonsState();
   applySearchHighlights();
+}
+
+function setCompareStatus(kind, text) {
+  if (!compareStatus) return;
+  compareStatus.classList.remove('is-match', 'is-diff', 'is-neutral');
+  if (!text) {
+    compareStatus.textContent = '';
+    compareStatus.classList.add('hidden');
+    return;
+  }
+  compareStatus.textContent = text;
+  compareStatus.classList.add('is-' + kind);
+  if (uiMode === 'compare') compareStatus.classList.remove('hidden');
 }
 
 function normalizeJsonText(text) {
@@ -220,10 +240,10 @@ function syncBottomActionButtonsState() {
   if (duplicateBtn) duplicateBtn.classList.toggle('hidden', !isEditor);
   if (downloadBtn) downloadBtn.classList.toggle('hidden', !isEditor);
   if (moveToCompareBtn) moveToCompareBtn.classList.toggle('hidden', !isEditor);
-  if (clearBtn) clearBtn.classList.toggle('hidden', !(isEditor || isCompare));
+  if (clearBtn) clearBtn.classList.toggle('hidden', !isEditor);
 
   if (isCompare) {
-    clearBtn.disabled = false;
+    clearBtn.disabled = true;
     copyBtn.disabled = true;
     formatBtn.disabled = true;
     minifyBtn.disabled = true;
@@ -467,6 +487,11 @@ function runCompare() {
   const diff = computeLineDiff(compareDraft.leftText, compareDraft.rightText);
   renderCompareResult(compareLeftInput, diff.leftLines, diff.leftDiff, diff.rightLines);
   renderCompareResult(compareRightInput, diff.rightLines, diff.rightDiff, diff.leftLines);
+  const diffCount = diff.leftDiff.size;
+  const hasContent = compareDraft.leftText.trim() || compareDraft.rightText.trim();
+  if (!hasContent) setCompareStatus('neutral', 'Ready to compare');
+  else if (diffCount === 0) setCompareStatus('match', 'Correct match \u2713');
+  else setCompareStatus('diff', `${diffCount} line${diffCount === 1 ? '' : 's'} differ`);
   applySearchHighlights();
 }
 
@@ -1636,6 +1661,21 @@ function clearCompareInputs() {
   compareRightInput.textContent = '';
   compareLeftInput.dataset.compareRendered = 'false';
   compareRightInput.dataset.compareRendered = 'false';
+  setCompareStatus('neutral', 'Ready to compare');
+  applySearchHighlights();
+}
+
+function clearCompareInput(side) {
+  if (side === 'left') {
+    compareDraft.leftText = '';
+    compareLeftInput.textContent = '';
+    compareLeftInput.dataset.compareRendered = 'false';
+  } else {
+    compareDraft.rightText = '';
+    compareRightInput.textContent = '';
+    compareRightInput.dataset.compareRendered = 'false';
+  }
+  setCompareStatus('neutral', 'Ready to compare');
   applySearchHighlights();
 }
 
@@ -2121,6 +2161,7 @@ async function init() {
     compareLeftInput.addEventListener('input', () => {
       compareDraft.leftText = compareLeftInput.textContent || '';
       compareLeftInput.dataset.compareRendered = 'false';
+      setCompareStatus('neutral', 'Ready to compare');
       if (searchQuery) applySearchHighlights();
     });
   }
@@ -2142,6 +2183,7 @@ async function init() {
     compareRightInput.addEventListener('input', () => {
       compareDraft.rightText = compareRightInput.textContent || '';
       compareRightInput.dataset.compareRendered = 'false';
+      setCompareStatus('neutral', 'Ready to compare');
       if (searchQuery) applySearchHighlights();
     });
   }
@@ -2150,9 +2192,19 @@ async function init() {
       storeCompareInput('left');
     });
   }
+  if (clearLeftCompareBtn) {
+    clearLeftCompareBtn.addEventListener('click', () => {
+      clearCompareInput('left');
+    });
+  }
   if (storeRightCompareBtn) {
     storeRightCompareBtn.addEventListener('click', () => {
       storeCompareInput('right');
+    });
+  }
+  if (clearRightCompareBtn) {
+    clearRightCompareBtn.addEventListener('click', () => {
+      clearCompareInput('right');
     });
   }
   if (runCaptureScanBtn) runCaptureScanBtn.addEventListener('click', runCaptureScan);
