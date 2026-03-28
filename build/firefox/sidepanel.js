@@ -163,18 +163,24 @@ function setMode(nextMode, options = {}) {
   }
 
   if (isCompare) {
-    if (!options.preserveCompareDraft) {
-      // Default compare entry (from Single): seed left side from current editor.
+    if (options.preserveCompareDraft) {
+      compareLeftInput.textContent = compareDraft.leftText || '';
+      compareRightInput.textContent = compareDraft.rightText || '';
+      compareLeftInput.dataset.compareRendered = 'false';
+      compareRightInput.dataset.compareRendered = 'false';
+    } else if (options.seedFromEditor) {
       compareDraft.leftText = getEditorText();
       compareLeftInput.textContent = compareDraft.leftText;
       compareLeftInput.dataset.compareRendered = 'false';
-      if (prevMode === 'editor' && !compareDraft.rightText) {
-        compareRightInput.textContent = '';
-        compareRightInput.dataset.compareRendered = 'false';
-      }
-    } else {
-      compareLeftInput.textContent = compareDraft.leftText || '';
+      if (!options.keepRightDraft) compareDraft.rightText = '';
       compareRightInput.textContent = compareDraft.rightText || '';
+      compareRightInput.dataset.compareRendered = 'false';
+    } else {
+      // Entering Compare mode from the top toggle starts empty by design.
+      compareDraft.leftText = '';
+      compareDraft.rightText = '';
+      compareLeftInput.textContent = '';
+      compareRightInput.textContent = '';
       compareLeftInput.dataset.compareRendered = 'false';
       compareRightInput.dataset.compareRendered = 'false';
     }
@@ -352,6 +358,17 @@ function applySearchHighlights() {
   if (uiMode === 'captures') {
     highlightSearchInElement(captureList, searchQuery);
     highlightSearchInElement(captureDetailCode, searchQuery);
+  }
+}
+
+function scrollToFirstEditorSearchHit() {
+  if (!searchQuery || uiMode !== 'editor') return;
+  const firstHit = editorCode?.querySelector('mark.search-hit');
+  if (!firstHit) return;
+  try {
+    firstHit.scrollIntoView({ block: 'center', inline: 'nearest' });
+  } catch (_) {
+    // Ignore scroll failures from detached nodes or hidden states.
   }
 }
 
@@ -627,6 +644,7 @@ function renderCaptureList() {
 
 async function refreshCaptures() {
   const res = await runtimeMessage({ type: 'capture:list', tabId: currentBrowserTabId });
+  if (typeof res?.tabId === 'number') currentBrowserTabId = res.tabId;
   captureItems = Array.isArray(res?.items) ? res.items : [];
   renderCaptureList();
 }
@@ -636,7 +654,8 @@ async function runCaptureScan() {
     runCaptureScanBtn.disabled = true;
     runCaptureScanBtn.textContent = 'Scanning...';
   }
-  await runtimeMessage({ type: 'capture:scanCurrentTab' });
+  const scanRes = await runtimeMessage({ type: 'capture:scanCurrentTab', tabId: currentBrowserTabId });
+  if (typeof scanRes?.tabId === 'number') currentBrowserTabId = scanRes.tabId;
   await refreshCaptures();
   if (runCaptureScanBtn) {
     runCaptureScanBtn.disabled = false;
@@ -716,12 +735,17 @@ function consolidateGhostNodes() {
  * content so save/validate/copy use the real document, not the collapsed view.
  */
 function getFullContent() {
-  if (foldedLines.size > 0 && activeTabId) {
+  // Keep line numbers/fold indicators aligned with what is currently rendered.
+  // While unfolded we must read live editor text, not debounced tab state.
+  if (foldedLines.size === 0) {
+    consolidateGhostNodes();
+    return editorCode.textContent || '';
+  }
+  if (activeTabId) {
     const tab = tabs.find((t) => t.id === activeTabId);
     if (tab) return tab.content || '';
   }
-  consolidateGhostNodes();
-  return editorCode.textContent || '';
+  return '';
 }
 
 /**
@@ -748,6 +772,7 @@ function setEditorTextPlain(text) {
   clearEditorGhostNodes();
   updatePlaceholder(text);
   foldedLines.clear();
+  syncBottomActionButtonsState();
 }
 
 /**
@@ -780,6 +805,7 @@ function setEditorTextHighlighted(text, clearFolds = true) {
   updatePlaceholder(text);
   updateStatusBar();
   applySearchHighlights();
+  syncBottomActionButtonsState();
 }
 
 /**
@@ -997,15 +1023,7 @@ function flushActiveTab() {
 
 function renderTabs() {
   tabsContainer.textContent = '';
-  const visibleTabs = searchQuery
-    ? tabs.filter((tab) => (
-      matchesSearch(getTabLabel(tab))
-      || matchesSearch(tab.title)
-      || matchesSearch(tab.content)
-    ))
-    : tabs;
-
-  visibleTabs.forEach((tab) => {
+  tabs.forEach((tab) => {
     const tabEl = document.createElement('div');
     const isActive = tab.id === activeTabId;
     tabEl.className = 'tab' + (isActive ? ' active' : '');
@@ -1176,6 +1194,7 @@ function switchTab(id) {
   updateMinifyButton();
   updateCollapseExpandButtons();
   syncBottomActionButtonsState();
+  if (searchQuery) scrollToFirstEditorSearchHit();
 }
 
 async function addTab(initialContent = '') {
@@ -1366,6 +1385,7 @@ function onEditorInput() {
         }
       }
     }, DEBOUNCE_MS);
+    syncBottomActionButtonsState();
     return;
   }
   updatePlaceholder(text);
@@ -1394,6 +1414,7 @@ function onEditorInput() {
       }
     }
   }, DEBOUNCE_MS);
+  syncBottomActionButtonsState();
 }
 
 // ─── Key handlers for contenteditable ───────────────────────
@@ -1647,7 +1668,6 @@ function moveEditorToCompare() {
   compareLeftInput.dataset.compareRendered = 'false';
   compareRightInput.dataset.compareRendered = 'false';
   setMode('compare', { preserveCompareDraft: true });
-  runCompare();
 }
 
 function formatContent() {
@@ -2068,12 +2088,12 @@ async function init() {
       renderTabs();
       renderCaptureList();
       applySearchHighlights();
+      scrollToFirstEditorSearchHit();
     });
   }
   if (compareModeBtn) {
     compareModeBtn.addEventListener('click', () => {
       setMode('compare');
-      runCompare();
     });
   }
   if (captureModeBtn) {

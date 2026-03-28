@@ -99,7 +99,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     }
 
     if (msg.type === 'capture:scanCurrentTab') {
-      const activeTabId = await getActiveTabId();
+      const activeTabId = typeof msg.tabId === 'number' ? msg.tabId : await getActiveTabId();
       if (typeof activeTabId !== 'number' || !chrome.tabs?.sendMessage) {
         sendResponse({ ok: false, count: 0 });
         return;

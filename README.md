@@ -11,8 +11,8 @@
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="MIT License"></a>
-  <img src="https://img.shields.io/badge/chrome-v1.1.2-brightgreen.svg" alt="Chrome v1.1.2">
-  <img src="https://img.shields.io/badge/firefox-v1.1.2-orange.svg" alt="Firefox v1.1.2">
+  <img src="https://img.shields.io/badge/chrome-v1.3.0-brightgreen.svg" alt="Chrome v1.3.0">
+  <img src="https://img.shields.io/badge/firefox-v1.3.0-orange.svg" alt="Firefox v1.3.0">
   <img src="https://img.shields.io/badge/manifest-v3-blue.svg" alt="Manifest V3">
   <img src="https://img.shields.io/badge/no_frameworks-vanilla_JS-yellow.svg" alt="Vanilla JS">
 </p>
@@ -50,8 +50,8 @@ Install from the official stores:
 
 | Browser | Version | Install |
 |--------|--------|--------|
-| **Chrome** | 1.1.2 | [Chrome Web Store](https://chromewebstore.google.com/detail/jason-json-manager/lmagkaeimimgfafdeifljdiaekkljbnk) |
-| **Firefox** | 1.1.2 | [Firefox Add-ons](https://addons.mozilla.org/en-US/firefox/addon/jason-json-manager/) |
+| **Chrome** | 1.3.0 | [Chrome Web Store](https://chromewebstore.google.com/detail/jason-json-manager/lmagkaeimimgfafdeifljdiaekkljbnk) |
+| **Firefox** | 1.3.0 | [Firefox Add-ons](https://addons.mozilla.org/en-US/firefox/addon/jason-json-manager/) |
 
 No zip files or developer mode needed for normal use.
 
@@ -86,7 +86,7 @@ cd JASON-JSON-Manager
 2. The build script verifies that `build/*/manifest.json` matches `manifests/*.json` and fails if they diverge.
 3. Load the extension from `build/chrome` or `build/firefox` for QA, then submit the corresponding zip for publishing.
 
-## What's new in 1.1.2
+## What's new in 1.3.0
 
 ### New features
 
@@ -100,6 +100,9 @@ cd JASON-JSON-Manager
 - **Real-time size indicator** — byte count updates live in the status bar as you type
 - **In-flight validation** — JSON is re-validated every 500 ms during editing so errors are highlighted as you correct them, not just on save or blur
 - **Persistent sidebar across pages** — tabs and all content remain intact when you close and reopen the sidebar, and are shared across every page in the same browser session
+- **Split compare mode** — compare two JSON payloads side-by-side with line and inline diff highlights
+- **Sidebar search** — search tabs and captured payloads from one input
+- **Manual page scan capture** — run an on-demand scan to collect JSON-like page blocks into Capture mode
 
 ### Bug fixes
 
@@ -115,7 +118,7 @@ cd JASON-JSON-Manager
 - Build script now supports `DEBUG=1` mode for local development with a browser mock (`debug.html`)
 - Brighter sage/orange accent colors for improved contrast
 
-> **Note:** Chrome and Firefox now ship as v1.1.2.
+> **Note:** Chrome and Firefox now ship as v1.3.0.
 
 ## How it works
 

@@ -1,12 +1,12 @@
 # Privacy Policy
 
-**Last updated:** March 2026
+**Last updated:** March 2026 (v1.3.0)
 
 JASON does not collect, transmit, or share any data with external services. All snippets, settings, and captures are stored locally in your browser using `chrome.storage.local` and never leave your device.
 
 - **No analytics or tracking**
 - **No third-party services**
-- **Optional local capture only:** when enabled by you, JASON inspects JSON-like XHR/fetch responses in the current tab so they can be viewed in the sidebar.
+- **Optional local capture only:** when triggered by you via **Run Scan**, JASON inspects JSON-like content already present in the current page (for example `script[type*="json"]`, `pre`, and `code` blocks) so it can be viewed in the sidebar.
 
 ### Permissions used
 
