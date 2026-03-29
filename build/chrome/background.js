@@ -6,6 +6,7 @@ chrome.sidePanel
 const CAPTURE_STATE_KEY = 'captureState';
 const CAPTURE_MAX_PER_TAB = 80;
 const CAPTURE_MAX_BODY_CHARS = 120000;
+const CAPTURE_SCAN_MAX_ITEMS = 12;
 
 function tabKey(tabId) {
   return String(typeof tabId === 'number' ? tabId : 'global');
@@ -51,6 +52,62 @@ async function getActiveTabId() {
 function getCaptureState(rawState) {
   const state = rawState && typeof rawState === 'object' ? rawState : {};
   return { capturesByTab: state.capturesByTab || {} };
+}
+
+function isRestrictedPageUrl(url) {
+  if (typeof url !== 'string' || !url) return true;
+  return (
+    url.startsWith('chrome://')
+    || url.startsWith('chrome-extension://')
+    || url.startsWith('devtools://')
+    || url.startsWith('about:')
+    || url.startsWith('view-source:')
+    || url.startsWith('edge://')
+  );
+}
+
+function collectPageJsonOnDemand(maxItems, maxTextLen) {
+  function parseCandidate(text) {
+    const raw = String(text || '').trim();
+    if (!raw) return null;
+    if (!raw.startsWith('{') && !raw.startsWith('[')) return null;
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  }
+
+  function normalizeBody(value) {
+    const text = typeof value === 'string' ? value : JSON.stringify(value);
+    return text.length > maxTextLen ? text.slice(0, maxTextLen) : text;
+  }
+
+  const out = [];
+  const seen = new Set();
+  const sources = [
+    ...document.querySelectorAll('script[type*="json"]'),
+    ...document.querySelectorAll('pre'),
+    ...document.querySelectorAll('code')
+  ];
+
+  for (const node of sources) {
+    if (out.length >= maxItems) break;
+    const parsed = parseCandidate(node.textContent || '');
+    if (!parsed) continue;
+    const body = normalizeBody(JSON.stringify(parsed));
+    if (seen.has(body)) continue;
+    seen.add(body);
+    out.push({
+      method: 'SCAN',
+      url: location.href,
+      status: 200,
+      contentType: 'application/json',
+      body,
+      ts: Date.now()
+    });
+  }
+  return out;
 }
 
 // Persist tabs when side panel closes (background outlives panel, so save completes)
@@ -107,15 +164,54 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
     if (msg.type === 'capture:scanCurrentTab') {
       const activeTabId = typeof msg.tabId === 'number' ? msg.tabId : await getActiveTabId();
-      if (typeof activeTabId !== 'number' || !chrome.tabs?.sendMessage) {
+      if (typeof activeTabId !== 'number') {
         sendResponse({ ok: false, count: 0 });
         return;
       }
+      if (msg.confirmed !== true) {
+        sendResponse({ ok: false, count: 0, tabId: activeTabId, reason: 'confirmation_required' });
+        return;
+      }
+      if (!chrome.scripting?.executeScript) {
+        sendResponse({ ok: false, count: 0, tabId: activeTabId, reason: 'scripting_unavailable' });
+        return;
+      }
+
       try {
-        const result = await chrome.tabs.sendMessage(activeTabId, { type: 'capture:scanPage' });
-        sendResponse({ ok: true, count: result?.count || 0, tabId: activeTabId });
-      } catch (_) {
-        sendResponse({ ok: false, count: 0, tabId: activeTabId });
+        const tab = await chrome.tabs.get(activeTabId);
+        if (isRestrictedPageUrl(tab?.url || '')) {
+          sendResponse({ ok: false, count: 0, tabId: activeTabId, reason: 'restricted_page' });
+          return;
+        }
+
+        const execResults = await chrome.scripting.executeScript({
+          target: { tabId: activeTabId },
+          func: collectPageJsonOnDemand,
+          args: [CAPTURE_SCAN_MAX_ITEMS, CAPTURE_MAX_BODY_CHARS]
+        });
+        const payloads = Array.isArray(execResults?.[0]?.result) ? execResults[0].result : [];
+
+        if (payloads.length > 0) {
+          const state = await chrome.storage.local.get([CAPTURE_STATE_KEY]);
+          const captureState = getCaptureState(state[CAPTURE_STATE_KEY]);
+          const key = tabKey(activeTabId);
+          const existing = Array.isArray(captureState.capturesByTab[key]) ? captureState.capturesByTab[key] : [];
+          const next = [...existing];
+          for (const payload of payloads) {
+            next.push(normalizeCapture(payload));
+          }
+          captureState.capturesByTab[key] = next.slice(-CAPTURE_MAX_PER_TAB);
+          await chrome.storage.local.set({ [CAPTURE_STATE_KEY]: captureState });
+          chrome.runtime.sendMessage({ type: 'capture:updated', tabId: activeTabId }).catch(() => {});
+        }
+
+        sendResponse({ ok: true, count: payloads.length, tabId: activeTabId });
+      } catch (err) {
+        const message = String(err?.message || '');
+        const reason = /Cannot access|Missing host permission|chrome:\/\//i.test(message)
+          ? 'restricted_page'
+          : 'injection_failed';
+        sendResponse({ ok: false, count: 0, tabId: activeTabId, reason });
       }
       return;
     }

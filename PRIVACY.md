@@ -15,7 +15,7 @@ JASON does not collect, transmit, or share any data with external services. All 
 | `storage` | Save your snippets and tab names locally between sessions |
 | `sidePanel` / `sidebar` | Display the editor in the browser sidebar |
 | `tabs` | Resolve the active tab so capture can be enabled/queried per tab |
-| `content_scripts` + `<all_urls>` host access | Allow manual page scan (`Run Scan`) to inspect JSON-like content in the current tab |
+| `activeTab` + `scripting` | Allow manual, user-triggered scan (`Run Scan`) to inspect JSON-like content in the currently active tab |
 
 ### Contact
 
