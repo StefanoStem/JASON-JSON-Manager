@@ -13,6 +13,7 @@ const HIGHLIGHT_DEBOUNCE_MS = 1500;
 const LAST_ACTIVE_TAB_KEY = 'lastActiveTabId';
 const THEME_KEY = 'theme';
 const MAX_UNDO = 50;
+const CAPTURE_REFRESH_MS = 3000;
 
 // DOM elements
 const tabsContainer = document.getElementById('tabs');
@@ -30,14 +31,41 @@ const collapseBtn = document.getElementById('collapseBtn');
 const expandBtn = document.getElementById('expandBtn');
 const duplicateBtn = document.getElementById('duplicateBtn');
 const minifyBtn = document.getElementById('minifyBtn');
+const validateBtn = document.getElementById('validateBtn');
 const downloadBtn = document.getElementById('downloadBtn');
+const collapseExpandRow = document.querySelector('.collapse-expand-row');
 const statusBar = document.getElementById('statusBar');
+const statusBarRow = document.querySelector('.status-bar-row');
 const editorPanel = document.getElementById('editorPanel');
 const foldGutter = document.getElementById('foldGutter');
 const foldOverlay = document.getElementById('foldOverlay');
 const emptyState = document.getElementById('emptyState');
 const editorContainer = document.getElementById('editorContainer');
 const themeToggle = document.getElementById('themeToggle');
+const sidebarSearch = document.getElementById('sidebarSearch');
+const singleModeBtn = document.getElementById('singleModeBtn');
+const compareModeBtn = document.getElementById('compareModeBtn');
+const captureModeBtn = document.getElementById('captureModeBtn');
+const runCompareBtn = document.getElementById('runCompareBtn');
+const compareStatus = document.getElementById('compareStatus');
+const comparePanel = document.getElementById('comparePanel');
+const compareLeftInput = document.getElementById('compareLeftInput');
+const compareRightInput = document.getElementById('compareRightInput');
+const storeLeftCompareBtn = document.getElementById('storeLeftCompareBtn');
+const storeRightCompareBtn = document.getElementById('storeRightCompareBtn');
+const clearLeftCompareBtn = document.getElementById('clearLeftCompareBtn');
+const clearRightCompareBtn = document.getElementById('clearRightCompareBtn');
+const capturePanel = document.getElementById('capturePanel');
+const tabsRow = document.getElementById('tabsRow');
+const captureList = document.getElementById('captureList');
+const captureDetailMeta = document.getElementById('captureDetailMeta');
+const captureDetailCode = document.getElementById('captureDetailCode');
+const runCaptureScanBtn = document.getElementById('runCaptureScanBtn');
+const refreshCapturesBtn = document.getElementById('refreshCapturesBtn');
+const clearCapturesBtn = document.getElementById('clearCapturesBtn');
+const compareSelectedCapturesBtn = document.getElementById('compareSelectedCapturesBtn');
+const storeSelectedCapturesBtn = document.getElementById('storeSelectedCapturesBtn');
+const moveToCompareBtn = document.getElementById('moveToCompareBtn');
 
 // State
 let tabs = [];
@@ -54,85 +82,17 @@ let undoStack = [];
 let redoStack = [];
 /** True while applying undo/redo to avoid pushing to undo */
 let isUndoRedo = false;
+let uiMode = 'editor'; // editor | compare | captures
+let searchQuery = '';
+let compareDraft = { leftText: '', rightText: '' };
+let captureItems = [];
+let selectedCaptureId = null;
+let currentBrowserTabId = null;
+let capturePollTimer = null;
+let selectedCaptureIds = [];
 
 function hasStorage() {
   return typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local;
-}
-
-function storageGet(keys) {
-  return new Promise((resolve, reject) => {
-    if (!hasStorage()) {
-      resolve({});
-      return;
-    }
-    try {
-      const maybePromise = chrome.storage.local.get(keys, (result) => {
-        const err = chrome.runtime && chrome.runtime.lastError;
-        if (err) {
-          reject(new Error(err.message || String(err)));
-          return;
-        }
-        resolve(result || {});
-      });
-      if (maybePromise && typeof maybePromise.then === 'function') {
-        maybePromise.then((result) => resolve(result || {})).catch(reject);
-      }
-    } catch (err) {
-      reject(err);
-    }
-  });
-}
-
-function storageSet(value) {
-  return new Promise((resolve, reject) => {
-    if (!hasStorage()) {
-      resolve();
-      return;
-    }
-    try {
-      const maybePromise = chrome.storage.local.set(value, () => {
-        const err = chrome.runtime && chrome.runtime.lastError;
-        if (err) {
-          reject(new Error(err.message || String(err)));
-          return;
-        }
-        resolve();
-      });
-      if (maybePromise && typeof maybePromise.then === 'function') {
-        maybePromise.then(() => resolve()).catch(reject);
-      }
-    } catch (err) {
-      reject(err);
-    }
-  });
-}
-
-function sendRuntimeMessage(message) {
-  return new Promise((resolve) => {
-    let settled = false;
-    function finish(value) {
-      if (settled) return;
-      settled = true;
-      resolve(value);
-    }
-    try {
-      const maybePromise = chrome.runtime.sendMessage(message, (response) => {
-        const err = chrome.runtime && chrome.runtime.lastError;
-        if (err) {
-          finish(null);
-          return;
-        }
-        finish(response);
-      });
-      if (maybePromise && typeof maybePromise.then === 'function') {
-        maybePromise.then((response) => finish(response)).catch(() => finish(null));
-      } else {
-        setTimeout(() => finish(null), 300);
-      }
-    } catch (_) {
-      finish(null);
-    }
-  });
 }
 
 // ─── Theme ─────────────────────────────────────────────────
@@ -148,7 +108,7 @@ function applyTheme(theme) {
 async function loadTheme() {
   if (!hasStorage()) return 'dark';
   try {
-    const result = await storageGet([THEME_KEY]);
+    const result = await chrome.storage.local.get([THEME_KEY]);
     return result[THEME_KEY] === 'light' ? 'light' : 'dark';
   } catch {
     return 'dark';
@@ -161,11 +121,160 @@ async function toggleTheme() {
   applyTheme(next);
   if (hasStorage()) {
     try {
-      await storageSet({ [THEME_KEY]: next });
+      await chrome.storage.local.set({ [THEME_KEY]: next });
     } catch (err) {
       console.error('Failed to save theme:', err);
     }
   }
+}
+
+function escapeHtml(text) {
+  return String(text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function setMode(nextMode, options = {}) {
+  const prevMode = uiMode;
+  uiMode = nextMode;
+  const isEditor = uiMode === 'editor';
+  const isCompare = uiMode === 'compare';
+  const isCaptures = uiMode === 'captures';
+
+  if (editorPanel) editorPanel.classList.toggle('hidden', !isEditor);
+  if (comparePanel) comparePanel.classList.toggle('hidden', !isCompare);
+  if (capturePanel) capturePanel.classList.toggle('hidden', !isCaptures);
+  if (tabsRow) tabsRow.classList.toggle('hidden', !isEditor);
+  if (runCompareBtn) runCompareBtn.classList.toggle('hidden', !isCompare);
+  if (compareStatus) compareStatus.classList.toggle('hidden', !isCompare);
+  if (collapseExpandRow) collapseExpandRow.classList.toggle('is-compare', isCompare);
+  if (collapseBtn) collapseBtn.classList.toggle('hidden', !isEditor);
+  if (expandBtn) expandBtn.classList.toggle('hidden', !isEditor);
+  if (statusBarRow) statusBarRow.classList.toggle('hidden', !isEditor);
+
+  if (singleModeBtn) {
+    singleModeBtn.setAttribute('aria-pressed', String(isEditor));
+    singleModeBtn.classList.toggle('active', isEditor);
+  }
+  if (compareModeBtn) {
+    compareModeBtn.setAttribute('aria-pressed', String(isCompare));
+    compareModeBtn.classList.toggle('active', isCompare);
+  }
+  if (captureModeBtn) {
+    captureModeBtn.setAttribute('aria-pressed', String(isCaptures));
+    captureModeBtn.classList.toggle('active', isCaptures);
+  }
+
+  if (isCompare) {
+    if (options.preserveCompareDraft) {
+      compareLeftInput.textContent = compareDraft.leftText || '';
+      compareRightInput.textContent = compareDraft.rightText || '';
+      compareLeftInput.dataset.compareRendered = 'false';
+      compareRightInput.dataset.compareRendered = 'false';
+    } else if (options.seedFromEditor) {
+      compareDraft.leftText = getEditorText();
+      compareLeftInput.textContent = compareDraft.leftText;
+      compareLeftInput.dataset.compareRendered = 'false';
+      if (!options.keepRightDraft) compareDraft.rightText = '';
+      compareRightInput.textContent = compareDraft.rightText || '';
+      compareRightInput.dataset.compareRendered = 'false';
+    } else {
+      // Entering Compare mode from the top toggle starts empty by design.
+      compareDraft.leftText = '';
+      compareDraft.rightText = '';
+      compareLeftInput.textContent = '';
+      compareRightInput.textContent = '';
+      compareLeftInput.dataset.compareRendered = 'false';
+      compareRightInput.dataset.compareRendered = 'false';
+      setCompareStatus('neutral', 'Ready to compare');
+    }
+  }
+
+  if (isCaptures) {
+    startCapturePolling();
+    refreshCaptures();
+  } else {
+    stopCapturePolling();
+  }
+
+  if (!isEditor) clearValidationMessage();
+
+  syncBottomActionButtonsState();
+  applySearchHighlights();
+}
+
+function setCompareStatus(kind, text) {
+  if (!compareStatus) return;
+  compareStatus.classList.remove('is-match', 'is-diff', 'is-neutral');
+  if (!text) {
+    compareStatus.textContent = '';
+    compareStatus.classList.add('hidden');
+    return;
+  }
+  compareStatus.textContent = text;
+  compareStatus.classList.add('is-' + kind);
+  if (uiMode === 'compare') compareStatus.classList.remove('hidden');
+}
+
+function normalizeJsonText(text) {
+  const raw = String(text || '').trim();
+  if (!raw) return '';
+  try {
+    return JSON.stringify(JSON.parse(raw), null, 2);
+  } catch {
+    return raw;
+  }
+}
+
+function syncBottomActionButtonsState() {
+  const isEditor = uiMode === 'editor';
+  const isCompare = uiMode === 'compare';
+
+  if (copyBtn) copyBtn.classList.toggle('hidden', !isEditor);
+  if (formatBtn) formatBtn.classList.toggle('hidden', !isEditor);
+  if (minifyBtn) minifyBtn.classList.toggle('hidden', !isEditor);
+  if (validateBtn) validateBtn.classList.toggle('hidden', !isEditor);
+  if (duplicateBtn) duplicateBtn.classList.toggle('hidden', !isEditor);
+  if (downloadBtn) downloadBtn.classList.toggle('hidden', !isEditor);
+  if (moveToCompareBtn) moveToCompareBtn.classList.toggle('hidden', !isEditor);
+  if (clearBtn) clearBtn.classList.toggle('hidden', !isEditor);
+
+  if (isCompare) {
+    clearBtn.disabled = true;
+    copyBtn.disabled = true;
+    formatBtn.disabled = true;
+    minifyBtn.disabled = true;
+    if (validateBtn) validateBtn.disabled = true;
+    duplicateBtn.disabled = true;
+    downloadBtn.disabled = true;
+    if (moveToCompareBtn) moveToCompareBtn.disabled = true;
+    return;
+  }
+
+  if (!isEditor) {
+    clearBtn.disabled = true;
+    copyBtn.disabled = true;
+    formatBtn.disabled = true;
+    minifyBtn.disabled = true;
+    if (validateBtn) validateBtn.disabled = true;
+    duplicateBtn.disabled = true;
+    downloadBtn.disabled = true;
+    if (moveToCompareBtn) moveToCompareBtn.disabled = true;
+    return;
+  }
+
+  copyBtn.disabled = false;
+  clearBtn.disabled = false;
+  duplicateBtn.disabled = false;
+  downloadBtn.disabled = false;
+  if (validateBtn) validateBtn.disabled = !(getEditorText() || '').trim();
+  if (moveToCompareBtn) moveToCompareBtn.disabled = !(getEditorText() || '').trim();
+  const result = validateJson(false);
+  formatBtn.disabled = !result.valid;
+  updateMinifyButton();
 }
 
 // ─── Helpers ────────────────────────────────────────────────
@@ -180,6 +289,532 @@ function getTabLabel(tab) {
   if (!text) return '(empty)';
   const preview = text.slice(0, TAB_PREVIEW_LENGTH);
   return preview + (text.length > TAB_PREVIEW_LENGTH ? '…' : '');
+}
+
+function matchesSearch(value) {
+  if (!searchQuery) return true;
+  return String(value || '').toLowerCase().includes(searchQuery);
+}
+
+function clearSearchHighlights(root) {
+  if (!root) return;
+  const marks = root.querySelectorAll('mark.search-hit');
+  marks.forEach((mark) => {
+    const textNode = document.createTextNode(mark.textContent || '');
+    mark.replaceWith(textNode);
+  });
+  root.normalize();
+}
+
+function highlightSearchInElement(root, query) {
+  if (!root) return 0;
+  clearSearchHighlights(root);
+  const term = String(query || '').trim();
+  if (!term) return 0;
+
+  const lowerTerm = term.toLowerCase();
+  const textNodes = [];
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      if (!node.nodeValue || !node.nodeValue.trim()) return NodeFilter.FILTER_REJECT;
+      const parent = node.parentElement;
+      if (parent && parent.closest('mark.search-hit')) return NodeFilter.FILTER_REJECT;
+      return NodeFilter.FILTER_ACCEPT;
+    }
+  });
+
+  let currentNode = walker.nextNode();
+  while (currentNode) {
+    textNodes.push(currentNode);
+    currentNode = walker.nextNode();
+  }
+
+  let totalMatches = 0;
+  textNodes.forEach((node) => {
+    const value = node.nodeValue || '';
+    const lowerValue = value.toLowerCase();
+    let fromIndex = 0;
+    let matchIndex = lowerValue.indexOf(lowerTerm, fromIndex);
+    if (matchIndex === -1) return;
+
+    const frag = document.createDocumentFragment();
+    while (matchIndex !== -1) {
+      if (matchIndex > fromIndex) {
+        frag.appendChild(document.createTextNode(value.slice(fromIndex, matchIndex)));
+      }
+      const hit = document.createElement('mark');
+      hit.className = 'search-hit';
+      hit.textContent = value.slice(matchIndex, matchIndex + term.length);
+      frag.appendChild(hit);
+      totalMatches++;
+      fromIndex = matchIndex + term.length;
+      matchIndex = lowerValue.indexOf(lowerTerm, fromIndex);
+    }
+    if (fromIndex < value.length) {
+      frag.appendChild(document.createTextNode(value.slice(fromIndex)));
+    }
+    node.parentNode.replaceChild(frag, node);
+  });
+
+  return totalMatches;
+}
+
+function applySearchHighlights() {
+  if (!searchQuery) {
+    clearSearchHighlights(tabsContainer);
+    clearSearchHighlights(editorCode);
+    clearSearchHighlights(compareLeftInput);
+    clearSearchHighlights(compareRightInput);
+    clearSearchHighlights(captureList);
+    clearSearchHighlights(captureDetailCode);
+    return;
+  }
+  highlightSearchInElement(tabsContainer, searchQuery);
+  if (uiMode === 'editor') highlightSearchInElement(editorCode, searchQuery);
+  if (uiMode === 'compare') {
+    highlightSearchInElement(compareLeftInput, searchQuery);
+    highlightSearchInElement(compareRightInput, searchQuery);
+  }
+  if (uiMode === 'captures') {
+    highlightSearchInElement(captureList, searchQuery);
+    highlightSearchInElement(captureDetailCode, searchQuery);
+  }
+}
+
+function scrollToFirstEditorSearchHit() {
+  if (!searchQuery || uiMode !== 'editor') return;
+  const firstHit = editorCode?.querySelector('mark.search-hit');
+  if (!firstHit) return;
+  try {
+    firstHit.scrollIntoView({ block: 'center', inline: 'nearest' });
+  } catch (_) {
+    // Ignore scroll failures from detached nodes or hidden states.
+  }
+}
+
+function computeLineDiff(leftText, rightText) {
+  const leftLines = String(leftText || '').split('\n');
+  const rightLines = String(rightText || '').split('\n');
+  const maxLen = Math.max(leftLines.length, rightLines.length);
+  const leftDiff = new Set();
+  const rightDiff = new Set();
+  for (let i = 0; i < maxLen; i++) {
+    const l = leftLines[i] ?? '';
+    const r = rightLines[i] ?? '';
+    if (l !== r) {
+      leftDiff.add(i);
+      rightDiff.add(i);
+    }
+  }
+  return { leftLines, rightLines, leftDiff, rightDiff };
+}
+
+function buildInlineDiffHtml(line, otherLine) {
+  const current = line || '';
+  const opposite = otherLine || '';
+  if (current === opposite) return escapeHtml(current || ' ');
+
+  let prefix = 0;
+  const minLen = Math.min(current.length, opposite.length);
+  while (prefix < minLen && current[prefix] === opposite[prefix]) prefix++;
+
+  let suffix = 0;
+  while (
+    suffix < (minLen - prefix)
+    && current[current.length - 1 - suffix] === opposite[opposite.length - 1 - suffix]
+  ) {
+    suffix++;
+  }
+
+  const start = current.slice(0, prefix);
+  const changed = current.slice(prefix, current.length - suffix);
+  const end = suffix > 0 ? current.slice(current.length - suffix) : '';
+
+  if (!changed) return escapeHtml(current || ' ');
+  return `${escapeHtml(start)}<span class="compare-char-diff">${escapeHtml(changed)}</span>${escapeHtml(end)}`;
+}
+
+function renderCompareResult(element, lines, diffSet, otherLines) {
+  const html = lines
+    .map((line, idx) => {
+      const klass = diffSet.has(idx) ? 'compare-line compare-line-diff' : 'compare-line';
+      const content = diffSet.has(idx)
+        ? buildInlineDiffHtml(line, otherLines[idx] || '')
+        : escapeHtml(line || ' ');
+      return `<span class="${klass}">${content}</span>`;
+    })
+    .join('');
+  element.innerHTML = html || '<span class="compare-line"> </span>';
+  element.dataset.compareRendered = 'true';
+}
+
+function getCompareInputPlainText(element, side) {
+  if (!element) return '';
+  if (element.dataset.compareRendered === 'true') {
+    return side === 'left' ? (compareDraft.leftText || '') : (compareDraft.rightText || '');
+  }
+  return element.textContent || '';
+}
+
+function getSelectionOffsetWithin(element) {
+  try {
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) return -1;
+    const range = selection.getRangeAt(0);
+    if (!element.contains(range.startContainer)) return -1;
+    const preRange = range.cloneRange();
+    preRange.selectNodeContents(element);
+    preRange.setEnd(range.startContainer, range.startOffset);
+    return (preRange.toString() || '').length;
+  } catch {
+    return -1;
+  }
+}
+
+function setSelectionOffsetWithin(element, targetOffset) {
+  try {
+    const selection = window.getSelection();
+    if (!selection) return;
+    const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+    let node = walker.nextNode();
+    let consumed = 0;
+
+    while (node) {
+      const len = node.nodeValue ? node.nodeValue.length : 0;
+      if (consumed + len >= targetOffset) {
+        const range = document.createRange();
+        range.setStart(node, Math.max(0, targetOffset - consumed));
+        range.collapse(true);
+        selection.removeAllRanges();
+        selection.addRange(range);
+        return;
+      }
+      consumed += len;
+      node = walker.nextNode();
+    }
+
+    // Fallback: place caret at end when targetOffset exceeds current length.
+    const fallback = document.createRange();
+    fallback.selectNodeContents(element);
+    fallback.collapse(false);
+    selection.removeAllRanges();
+    selection.addRange(fallback);
+  } catch {
+    // ignore selection errors
+  }
+}
+
+function ensureCompareEditorPlainText(element, side) {
+  if (!element || element.dataset.compareRendered !== 'true') return;
+  const cursorOffset = getSelectionOffsetWithin(element);
+  const text = side === 'left' ? (compareDraft.leftText || '') : (compareDraft.rightText || '');
+  element.textContent = text;
+  element.dataset.compareRendered = 'false';
+  if (cursorOffset >= 0) setSelectionOffsetWithin(element, Math.min(cursorOffset, text.length));
+}
+
+function insertPlainTextAtSelection(target, text) {
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0) {
+    target.textContent += text;
+    return;
+  }
+  const range = selection.getRangeAt(0);
+  if (!target.contains(range.commonAncestorContainer)) {
+    target.textContent += text;
+    return;
+  }
+  range.deleteContents();
+  range.insertNode(document.createTextNode(text));
+  range.collapse(false);
+  selection.removeAllRanges();
+  selection.addRange(range);
+}
+
+function runCompare() {
+  const rawLeft = getCompareInputPlainText(compareLeftInput, 'left');
+  const rawRight = getCompareInputPlainText(compareRightInput, 'right');
+
+  // Ignore indentation/whitespace-only differences when both inputs are valid JSON.
+  // We compare canonical pretty JSON so "same data, different spacing" is a match.
+  let leftText = rawLeft;
+  let rightText = rawRight;
+  try {
+    const leftParsed = JSON.parse(String(rawLeft || '').trim());
+    const rightParsed = JSON.parse(String(rawRight || '').trim());
+    leftText = JSON.stringify(leftParsed, null, 2);
+    rightText = JSON.stringify(rightParsed, null, 2);
+  } catch {
+    // Keep raw text comparison when one side is not valid JSON yet.
+  }
+
+  compareDraft.leftText = leftText;
+  compareDraft.rightText = rightText;
+  const diff = computeLineDiff(compareDraft.leftText, compareDraft.rightText);
+  renderCompareResult(compareLeftInput, diff.leftLines, diff.leftDiff, diff.rightLines);
+  renderCompareResult(compareRightInput, diff.rightLines, diff.rightDiff, diff.leftLines);
+  const diffCount = diff.leftDiff.size;
+  const hasContent = compareDraft.leftText.trim() || compareDraft.rightText.trim();
+  if (!hasContent) setCompareStatus('neutral', 'Ready to compare');
+  else if (diffCount === 0) setCompareStatus('match', 'Correct match \u2713');
+  else setCompareStatus('diff', `${diffCount} line${diffCount === 1 ? '' : 's'} differ`);
+  applySearchHighlights();
+}
+
+function updateCompareSelectedCapturesButton() {
+  if (!compareSelectedCapturesBtn) return;
+  compareSelectedCapturesBtn.disabled = selectedCaptureIds.length < 2;
+}
+
+function updateStoreSelectedCapturesButton() {
+  if (!storeSelectedCapturesBtn) return;
+  const hasSelection = selectedCaptureIds.length > 0;
+  storeSelectedCapturesBtn.disabled = !hasSelection;
+  storeSelectedCapturesBtn.classList.toggle('active', hasSelection);
+}
+
+function toggleCaptureCompareSelection(captureId) {
+  const index = selectedCaptureIds.indexOf(captureId);
+  if (index >= 0) {
+    selectedCaptureIds.splice(index, 1);
+  } else {
+    selectedCaptureIds.push(captureId);
+  }
+  updateCompareSelectedCapturesButton();
+  updateStoreSelectedCapturesButton();
+}
+
+function openSelectedCapturesInCompare() {
+  if (selectedCaptureIds.length < 2) return;
+  const leftItem = captureItems.find((item) => item.id === selectedCaptureIds[0]);
+  const rightItem = captureItems.find((item) => item.id === selectedCaptureIds[1]);
+  if (!leftItem || !rightItem) return;
+
+  compareLeftInput.textContent = normalizeJsonText(leftItem.prettyBody || leftItem.body || '');
+  compareRightInput.textContent = normalizeJsonText(rightItem.prettyBody || rightItem.body || '');
+  compareLeftInput.dataset.compareRendered = 'false';
+  compareRightInput.dataset.compareRendered = 'false';
+  compareDraft.leftText = compareLeftInput.textContent;
+  compareDraft.rightText = compareRightInput.textContent;
+  setMode('compare', { preserveCompareDraft: true });
+  runCompare();
+}
+
+async function storeSelectedCapturesToTabs() {
+  if (selectedCaptureIds.length === 0) return;
+  const selectedItems = selectedCaptureIds
+    .map((id) => captureItems.find((item) => item.id === id))
+    .filter(Boolean);
+  if (selectedItems.length === 0) return;
+
+  for (const item of selectedItems) {
+    const text = normalizeJsonText(item.prettyBody || item.body || '');
+    if (!text) continue;
+    await addTab(text);
+  }
+  setMode('editor');
+}
+
+async function runtimeMessage(payload) {
+  if (!chrome?.runtime?.sendMessage) return null;
+  try {
+    return await chrome.runtime.sendMessage(payload);
+  } catch {
+    return null;
+  }
+}
+
+function formatCaptureTime(ts) {
+  try {
+    return new Date(ts).toLocaleTimeString();
+  } catch {
+    return '';
+  }
+}
+
+function formatCaptureTimestamp(ts) {
+  try {
+    const d = new Date(ts);
+    return `${d.toLocaleDateString()} ${d.toLocaleTimeString()}`;
+  } catch {
+    return '';
+  }
+}
+
+function filteredCaptures() {
+  if (!searchQuery) return captureItems;
+  return captureItems.filter((item) => (
+    matchesSearch(item.urlPath)
+    || matchesSearch(item.url)
+    || matchesSearch(item.method)
+    || matchesSearch(String(item.status || ''))
+    || matchesSearch(item.body)
+    || matchesSearch(item.prettyBody)
+  ));
+}
+
+function renderCaptureDetail(item) {
+  if (!item) {
+    captureDetailMeta.textContent = 'Select a capture item to inspect JSON.';
+    captureDetailCode.textContent = '';
+    applySearchHighlights();
+    return;
+  }
+  const meta = `${item.method || 'GET'} ${item.status || '-'} • ${formatCaptureTime(item.ts)} • ${item.url || ''}`;
+  captureDetailMeta.textContent = meta;
+  captureDetailCode.textContent = item.prettyBody || item.body || '';
+  applySearchHighlights();
+}
+
+function renderCaptureList() {
+  if (!captureList) return;
+  const items = filteredCaptures();
+  captureList.textContent = '';
+
+  if (items.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'capture-item';
+    empty.textContent = searchQuery
+      ? 'No captures match your search.'
+      : 'No captures yet. Click Run Scan for this tab.';
+    captureList.appendChild(empty);
+    const selectedStored = captureItems.find((x) => x.id === selectedCaptureId);
+    if (selectedStored && searchQuery) renderCaptureDetail(selectedStored);
+    else renderCaptureDetail(null);
+    updateCompareSelectedCapturesButton();
+    updateStoreSelectedCapturesButton();
+    return;
+  }
+
+  items.forEach((item) => {
+    const row = document.createElement('div');
+    row.className = 'capture-item'
+      + (item.id === selectedCaptureId ? ' active' : '')
+      + (selectedCaptureIds.includes(item.id) ? ' compare-selected' : '');
+
+    const title = document.createElement('div');
+    title.className = 'capture-item-title';
+    const shortId = String(item.id || '').slice(-6);
+    title.textContent = `${item.urlPath || item.url || '(unknown URL)'} • #${shortId}`;
+
+    const meta = document.createElement('div');
+    meta.className = 'capture-item-meta';
+    meta.textContent = `${item.method || 'GET'} ${item.status || '-'} • ${formatCaptureTimestamp(item.ts)} • #${shortId}`;
+
+    const topRow = document.createElement('div');
+    topRow.className = 'capture-row-top';
+    topRow.appendChild(title);
+
+    const selectBtn = document.createElement('button');
+    selectBtn.className = 'capture-select-btn';
+    if (selectedCaptureIds.includes(item.id)) selectBtn.classList.add('is-selected');
+    selectBtn.textContent = selectedCaptureIds.includes(item.id) ? 'Selected' : 'Select';
+    selectBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      toggleCaptureCompareSelection(item.id);
+      renderCaptureList();
+    });
+    topRow.appendChild(selectBtn);
+
+    row.appendChild(topRow);
+    row.appendChild(meta);
+    row.addEventListener('click', () => {
+      selectedCaptureId = item.id;
+      renderCaptureList();
+      renderCaptureDetail(item);
+    });
+    captureList.appendChild(row);
+  });
+
+  const selectedVisible = items.find((x) => x.id === selectedCaptureId);
+  const selectedStored = captureItems.find((x) => x.id === selectedCaptureId);
+  if (selectedVisible) {
+    renderCaptureDetail(selectedVisible);
+  } else if (selectedStored && searchQuery) {
+    renderCaptureDetail(selectedStored);
+  } else {
+    const fallback = items[0] || null;
+    selectedCaptureId = fallback?.id || null;
+    renderCaptureDetail(fallback);
+  }
+  updateCompareSelectedCapturesButton();
+  updateStoreSelectedCapturesButton();
+  applySearchHighlights();
+}
+
+async function refreshCaptures() {
+  // Always resolve from current active browser tab first, so scan/list
+  // cannot get stuck on a stale tab id after navigation.
+  const res = await runtimeMessage({ type: 'capture:list' });
+  if (typeof res?.tabId === 'number') currentBrowserTabId = res.tabId;
+  captureItems = Array.isArray(res?.items) ? res.items : [];
+  renderCaptureList();
+}
+
+function waitMs(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function runCaptureScan() {
+  const startedAt = Date.now();
+  const initialCount = captureItems.length;
+  if (runCaptureScanBtn) {
+    runCaptureScanBtn.disabled = true;
+    runCaptureScanBtn.textContent = 'Scanning...';
+  }
+  try {
+    // Refresh once to resolve the active tab id before scanning.
+    const activeRes = await runtimeMessage({ type: 'capture:list' });
+    if (typeof activeRes?.tabId === 'number') currentBrowserTabId = activeRes.tabId;
+
+    let scanRes = await runtimeMessage({ type: 'capture:scanCurrentTab', tabId: currentBrowserTabId });
+    // Retry once when content script was not ready (common after extension reload).
+    if (!scanRes?.ok) {
+      await waitMs(250);
+      const retryActive = await runtimeMessage({ type: 'capture:list' });
+      if (typeof retryActive?.tabId === 'number') currentBrowserTabId = retryActive.tabId;
+      scanRes = await runtimeMessage({ type: 'capture:scanCurrentTab', tabId: currentBrowserTabId });
+    }
+    if (typeof scanRes?.tabId === 'number') currentBrowserTabId = scanRes.tabId;
+
+    // Poll briefly so late capture:add writes can land before UI reports no results.
+    // This avoids the "button reacts too fast" feeling on slower pages.
+    let attempts = 0;
+    do {
+      await refreshCaptures();
+      if ((scanRes?.count || 0) > 0 || captureItems.length > initialCount) break;
+      attempts++;
+      if (attempts < 4) await waitMs(250);
+    } while (attempts < 4);
+
+    if (!scanRes?.ok) {
+      captureDetailMeta.textContent = 'Scan script is not ready for this tab yet. Refresh this page and run scan again.';
+    } else if ((scanRes?.count || 0) === 0 && captureItems.length <= initialCount) {
+      captureDetailMeta.textContent = 'Scan completed. No JSON blocks were found on this page.';
+    } else if ((scanRes?.count || 0) > 0) {
+      captureDetailMeta.textContent = `Scan completed. Found ${scanRes.count} item${scanRes.count === 1 ? '' : 's'}.`;
+    }
+  } finally {
+    const elapsed = Date.now() - startedAt;
+    if (elapsed < 700) await waitMs(700 - elapsed);
+    if (runCaptureScanBtn) {
+      runCaptureScanBtn.disabled = false;
+      runCaptureScanBtn.textContent = 'Run Scan';
+    }
+  }
+}
+
+function startCapturePolling() {
+  if (capturePollTimer) return;
+  capturePollTimer = setInterval(() => {
+    refreshCaptures();
+  }, CAPTURE_REFRESH_MS);
+}
+
+function stopCapturePolling() {
+  clearInterval(capturePollTimer);
+  capturePollTimer = null;
 }
 
 // ─── Editor text helpers ────────────────────────────────────
@@ -242,12 +877,17 @@ function consolidateGhostNodes() {
  * content so save/validate/copy use the real document, not the collapsed view.
  */
 function getFullContent() {
-  if (foldedLines.size > 0 && activeTabId) {
+  // Keep line numbers/fold indicators aligned with what is currently rendered.
+  // While unfolded we must read live editor text, not debounced tab state.
+  if (foldedLines.size === 0) {
+    consolidateGhostNodes();
+    return editorCode.textContent || '';
+  }
+  if (activeTabId) {
     const tab = tabs.find((t) => t.id === activeTabId);
     if (tab) return tab.content || '';
   }
-  consolidateGhostNodes();
-  return editorCode.textContent || '';
+  return '';
 }
 
 /**
@@ -274,6 +914,7 @@ function setEditorTextPlain(text) {
   clearEditorGhostNodes();
   updatePlaceholder(text);
   foldedLines.clear();
+  syncBottomActionButtonsState();
 }
 
 /**
@@ -305,6 +946,8 @@ function setEditorTextHighlighted(text, clearFolds = true) {
   clearEditorGhostNodes();
   updatePlaceholder(text);
   updateStatusBar();
+  applySearchHighlights();
+  syncBottomActionButtonsState();
 }
 
 /**
@@ -341,6 +984,7 @@ function reHighlight() {
   if (offset >= 0) {
     setCaretCharOffset(editorCode, offset);
   }
+  applySearchHighlights();
 }
 
 /**
@@ -437,7 +1081,7 @@ function applyUndoState(text) {
   }
   updateLineNumbers();
   updateStatusBar();
-  const res = validateJson();
+  const res = validateJson(false);
   formatBtn.disabled = !res.valid;
   updateCollapseExpandButtons();
   saveTabs();
@@ -464,11 +1108,13 @@ function performRedo() {
 async function saveTabs() {
   if (!hasStorage()) return;
   try {
-    await storageSet({ tabs, [LAST_ACTIVE_TAB_KEY]: activeTabId });
+    await chrome.storage.local.set({ tabs, [LAST_ACTIVE_TAB_KEY]: activeTabId });
   } catch (err) {
     console.error('Failed to save tabs:', err);
-    validationEl.textContent = '⚠️ Could not save to storage. Changes may not persist.';
-    validationEl.className = 'validation warning';
+    if (validationEl) {
+      validationEl.textContent = '⚠️ Could not save to storage. Changes may not persist.';
+      validationEl.className = 'validation warning';
+    }
   }
 }
 
@@ -479,7 +1125,7 @@ async function loadTabs() {
     return;
   }
   try {
-    const result = await storageGet(['tabs', LAST_ACTIVE_TAB_KEY]);
+    const result = await chrome.storage.local.get(['tabs', LAST_ACTIVE_TAB_KEY]);
     tabs = (result.tabs || [])
       .filter((t) => t && typeof t.id === 'string')
       .map((t) => ({
@@ -518,11 +1164,8 @@ function flushActiveTab() {
 // ─── Tabs ───────────────────────────────────────────────────
 
 function renderTabs() {
-  if (editingTabId && !tabsContainer.querySelector('.tab-title-input')) {
-    editingTabId = null;
-  }
-
-  tabsContainer.textContent = '';  tabs.forEach((tab) => {
+  tabsContainer.textContent = '';
+  tabs.forEach((tab) => {
     const tabEl = document.createElement('div');
     const isActive = tab.id === activeTabId;
     tabEl.className = 'tab' + (isActive ? ' active' : '');
@@ -589,6 +1232,7 @@ function renderTabs() {
   });
 
   addTabBtn.disabled = tabs.length >= MAX_TABS;
+  applySearchHighlights();
 }
 
 function startEditTabTitle(tab, labelEl) {
@@ -673,6 +1317,11 @@ function switchTab(id) {
 
   if (tab) {
     setEditorTextHighlighted(tab.content);
+    if (uiMode === 'compare') {
+      compareDraft.leftText = tab.content || '';
+      compareLeftInput.textContent = compareDraft.leftText;
+      runCompare();
+    }
     if (foldedLines.size === 0) editor.contentEditable = 'true';
     editorContainer.classList.remove('hidden');
     emptyState.classList.add('hidden');
@@ -681,10 +1330,13 @@ function switchTab(id) {
   renderTabs();
   saveTabs();
   updateLineNumbers();
-  const result = validateJson();
+  clearValidationMessage();
+  const result = validateJson(false);
   formatBtn.disabled = !result.valid;
   updateMinifyButton();
   updateCollapseExpandButtons();
+  syncBottomActionButtonsState();
+  if (searchQuery) scrollToFirstEditorSearchHit();
 }
 
 async function addTab(initialContent = '') {
@@ -705,9 +1357,11 @@ async function addTab(initialContent = '') {
   renderTabs();
   await saveTabs();
   updateLineNumbers();
-  const result = validateJson();
+  clearValidationMessage();
+  const result = validateJson(false);
   formatBtn.disabled = !result.valid;
   updateCollapseExpandButtons();
+  syncBottomActionButtonsState();
   editor.focus();
 }
 
@@ -730,9 +1384,11 @@ async function deleteTab(id) {
     const newTab = tabs.find((t) => t.id === activeTabId);
     setEditorTextHighlighted(newTab ? newTab.content : '');
     updateLineNumbers();
-    const res = validateJson();
+    clearValidationMessage();
+    const res = validateJson(false);
     formatBtn.disabled = !res.valid;
     updateCollapseExpandButtons();
+    syncBottomActionButtonsState();
 
     // Always show editor when we have at least one tab (never show empty state)
     editorContainer.classList.remove('hidden');
@@ -741,6 +1397,7 @@ async function deleteTab(id) {
 
   renderTabs();
   await saveTabs();
+  syncBottomActionButtonsState();
 }
 
 async function duplicateTab(id) {
@@ -759,10 +1416,13 @@ async function duplicateTab(id) {
   renderTabs();
   await saveTabs();
   updateLineNumbers();
-  const result = validateJson();
+  clearValidationMessage();
+  const result = validateJson(false);
   formatBtn.disabled = !result.valid;
   updateCollapseExpandButtons();
+  syncBottomActionButtonsState();
   updateStatusBar();
+  syncBottomActionButtonsState();
 }
 
 // ─── Line numbers ───────────────────────────────────────────
@@ -785,12 +1445,26 @@ function updateStatusBar() {
 
 // ─── Validation ─────────────────────────────────────────────
 
-function validateJson() {
+function clearValidationMessage() {
+  if (!validationEl) return;
+  validationEl.textContent = '';
+  validationEl.className = 'validation';
+  validationEl.removeAttribute('title');
+}
+
+function validateJson(showMessage = false) {
   const text = getEditorText().trim();
+  if (!showMessage || !validationEl) {
+    if (!text) return { valid: false };
+    try {
+      JSON.parse(text);
+      return { valid: true };
+    } catch {
+      return { valid: false };
+    }
+  }
   if (!text) {
-    validationEl.textContent = '';
-    validationEl.className = 'validation';
-    validationEl.removeAttribute('title');
+    clearValidationMessage();
     return { valid: false };
   }
   try {
@@ -813,6 +1487,11 @@ function validateJson() {
   }
 }
 
+function validateStoreContent() {
+  if (uiMode !== 'editor') return;
+  validateJson(true);
+}
+
 // ─── Scroll sync ────────────────────────────────────────────
 
 function syncScroll() {
@@ -833,7 +1512,7 @@ function onEditorInput() {
     updatePlaceholder(text || '');
     updateLineNumbers();
     updateStatusBar();
-    validateJson();
+    clearValidationMessage();
     formatBtn.disabled = true;
     updateCollapseExpandButtons();
     clearTimeout(highlightTimer);
@@ -848,12 +1527,14 @@ function onEditorInput() {
         }
       }
     }, DEBOUNCE_MS);
+    syncBottomActionButtonsState();
     return;
   }
   updatePlaceholder(text);
   updateLineNumbers();
   updateStatusBar();
-  const result = validateJson();
+  clearValidationMessage();
+  const result = validateJson(false);
   formatBtn.disabled = !result.valid;
   updateCollapseExpandButtons();
 
@@ -875,6 +1556,7 @@ function onEditorInput() {
       }
     }
   }, DEBOUNCE_MS);
+  syncBottomActionButtonsState();
 }
 
 // ─── Key handlers for contenteditable ───────────────────────
@@ -900,7 +1582,7 @@ function insertAtCursor(chars) {
 
   updatePlaceholder(newText);
   updateLineNumbers();
-  const result = validateJson();
+  const result = validateJson(false);
   formatBtn.disabled = !result.valid;
   updateCollapseExpandButtons();
 
@@ -1015,7 +1697,6 @@ function onEditorKeydown(e) {
 
 function onEditorPaste(e) {
   e.preventDefault();
-  e.stopPropagation();
   const pastedText = e.clipboardData?.getData('text/plain') || '';
   if (!pastedText) return;
 
@@ -1032,7 +1713,7 @@ function onEditorPaste(e) {
 
   setEditorTextHighlighted(newText);
   updateLineNumbers();
-  const result = validateJson();
+  const result = validateJson(false);
   formatBtn.disabled = !result.valid;
   updateCollapseExpandButtons();
 
@@ -1076,7 +1757,7 @@ function clearContent() {
   setEditorTextPlain('');
   updateLineNumbers();
   updateStatusBar();
-  validateJson();
+  clearValidationMessage();
   formatBtn.disabled = true;
   updateCollapseExpandButtons();
   if (activeTabId) {
@@ -1088,6 +1769,62 @@ function clearContent() {
     }
   }
   editor.focus();
+}
+
+function clearCompareInputs() {
+  compareDraft.leftText = '';
+  compareDraft.rightText = '';
+  compareLeftInput.textContent = '';
+  compareRightInput.textContent = '';
+  compareLeftInput.dataset.compareRendered = 'false';
+  compareRightInput.dataset.compareRendered = 'false';
+  setCompareStatus('neutral', 'Ready to compare');
+  applySearchHighlights();
+}
+
+function clearCompareInput(side) {
+  if (side === 'left') {
+    compareDraft.leftText = '';
+    compareLeftInput.textContent = '';
+    compareLeftInput.dataset.compareRendered = 'false';
+  } else {
+    compareDraft.rightText = '';
+    compareRightInput.textContent = '';
+    compareRightInput.dataset.compareRendered = 'false';
+  }
+  setCompareStatus('neutral', 'Ready to compare');
+  applySearchHighlights();
+}
+
+function handleClearAction() {
+  if (uiMode === 'compare') {
+    clearCompareInputs();
+    return;
+  }
+  clearContent();
+}
+
+async function storeCompareInput(side) {
+  const raw = side === 'left'
+    ? getCompareInputPlainText(compareLeftInput, 'left')
+    : getCompareInputPlainText(compareRightInput, 'right');
+  const text = String(raw || '').trim();
+  if (!text) return;
+  const normalized = normalizeJsonText(text);
+  await addTab(normalized);
+  setMode('editor');
+}
+
+function moveEditorToCompare() {
+  const text = normalizeJsonText(getEditorText());
+  if (!text) return;
+  compareDraft.leftText = text;
+  compareDraft.rightText = compareDraft.rightText || '';
+  compareLeftInput.textContent = compareDraft.leftText;
+  compareRightInput.textContent = compareDraft.rightText;
+  compareLeftInput.dataset.compareRendered = 'false';
+  compareRightInput.dataset.compareRendered = 'false';
+  setMode('compare', { preserveCompareDraft: true });
 }
 
 function formatContent() {
@@ -1110,7 +1847,7 @@ function formatContent() {
       renderTabs();
     }
   }
-  validateJson();
+  clearValidationMessage();
   editor.focus();
 }
 
@@ -1134,7 +1871,7 @@ function minifyContent() {
       renderTabs();
     }
   }
-  validateJson();
+  clearValidationMessage();
   editor.focus();
 }
 
@@ -1444,7 +2181,7 @@ function setupDropZone(el) {
         emptyState.classList.add('hidden');
         updateLineNumbers();
         updateStatusBar();
-        const res = validateJson();
+        const res = validateJson(false);
         formatBtn.disabled = !res.valid;
         updateCollapseExpandButtons();
         saveTabs();
@@ -1479,7 +2216,7 @@ function onGlobalPaste(e) {
           emptyState.classList.add('hidden');
           updateLineNumbers();
           updateStatusBar();
-          const res = validateJson();
+          const res = validateJson(false);
           formatBtn.disabled = !res.valid;
           updateCollapseExpandButtons();
         saveTabs();
@@ -1502,6 +2239,108 @@ async function init() {
   if (themeToggle) {
     themeToggle.addEventListener('click', toggleTheme);
   }
+  if (sidebarSearch) {
+    sidebarSearch.addEventListener('input', (e) => {
+      searchQuery = (e.target.value || '').trim().toLowerCase();
+      renderTabs();
+      renderCaptureList();
+      applySearchHighlights();
+      scrollToFirstEditorSearchHit();
+    });
+  }
+  if (compareModeBtn) {
+    compareModeBtn.addEventListener('click', () => {
+      setMode('compare');
+    });
+  }
+  if (captureModeBtn) {
+    captureModeBtn.addEventListener('click', () => setMode('captures'));
+  }
+  if (singleModeBtn) {
+    singleModeBtn.addEventListener('click', () => setMode('editor'));
+  }
+  if (runCompareBtn) runCompareBtn.addEventListener('click', runCompare);
+  if (compareLeftInput) {
+    compareLeftInput.addEventListener('beforeinput', () => {
+      clearSearchHighlights(compareLeftInput);
+      ensureCompareEditorPlainText(compareLeftInput, 'left');
+    });
+    compareLeftInput.addEventListener('paste', (e) => {
+      e.preventDefault();
+      ensureCompareEditorPlainText(compareLeftInput, 'left');
+      const text = e.clipboardData?.getData('text/plain') || '';
+      if (!text) return;
+      compareLeftInput.focus();
+      insertPlainTextAtSelection(compareLeftInput, text);
+      compareDraft.leftText = compareLeftInput.textContent || '';
+      compareLeftInput.dataset.compareRendered = 'false';
+    });
+    compareLeftInput.addEventListener('input', () => {
+      compareDraft.leftText = compareLeftInput.textContent || '';
+      compareLeftInput.dataset.compareRendered = 'false';
+      setCompareStatus('neutral', 'Ready to compare');
+      if (searchQuery) applySearchHighlights();
+    });
+  }
+  if (compareRightInput) {
+    compareRightInput.addEventListener('beforeinput', () => {
+      clearSearchHighlights(compareRightInput);
+      ensureCompareEditorPlainText(compareRightInput, 'right');
+    });
+    compareRightInput.addEventListener('paste', (e) => {
+      e.preventDefault();
+      ensureCompareEditorPlainText(compareRightInput, 'right');
+      const text = e.clipboardData?.getData('text/plain') || '';
+      if (!text) return;
+      compareRightInput.focus();
+      insertPlainTextAtSelection(compareRightInput, text);
+      compareDraft.rightText = compareRightInput.textContent || '';
+      compareRightInput.dataset.compareRendered = 'false';
+    });
+    compareRightInput.addEventListener('input', () => {
+      compareDraft.rightText = compareRightInput.textContent || '';
+      compareRightInput.dataset.compareRendered = 'false';
+      setCompareStatus('neutral', 'Ready to compare');
+      if (searchQuery) applySearchHighlights();
+    });
+  }
+  if (storeLeftCompareBtn) {
+    storeLeftCompareBtn.addEventListener('click', () => {
+      storeCompareInput('left');
+    });
+  }
+  if (clearLeftCompareBtn) {
+    clearLeftCompareBtn.addEventListener('click', () => {
+      clearCompareInput('left');
+    });
+  }
+  if (storeRightCompareBtn) {
+    storeRightCompareBtn.addEventListener('click', () => {
+      storeCompareInput('right');
+    });
+  }
+  if (clearRightCompareBtn) {
+    clearRightCompareBtn.addEventListener('click', () => {
+      clearCompareInput('right');
+    });
+  }
+  if (runCaptureScanBtn) runCaptureScanBtn.addEventListener('click', runCaptureScan);
+  if (refreshCapturesBtn) refreshCapturesBtn.addEventListener('click', refreshCaptures);
+  if (clearCapturesBtn) {
+    clearCapturesBtn.addEventListener('click', async () => {
+      await refreshCaptures();
+      await runtimeMessage({ type: 'capture:clear', tabId: currentBrowserTabId });
+      selectedCaptureId = null;
+      selectedCaptureIds = [];
+      await refreshCaptures();
+    });
+  }
+  if (compareSelectedCapturesBtn) {
+    compareSelectedCapturesBtn.addEventListener('click', openSelectedCapturesInCompare);
+  }
+  if (storeSelectedCapturesBtn) {
+    storeSelectedCapturesBtn.addEventListener('click', storeSelectedCapturesToTabs);
+  }
 
   if (tabs.length > 0) {
     const validActiveId = activeTabId && tabs.some((t) => t.id === activeTabId);
@@ -1516,13 +2355,24 @@ async function init() {
   }
 
   renderTabs();
+  renderCaptureList();
   updateLineNumbers();
   updateStatusBar();
-  const result = validateJson();
+  const result = validateJson(false);
   formatBtn.disabled = !result.valid;
   updateCollapseExpandButtons();
+  setMode('editor');
+
+  if (chrome?.runtime?.onMessage) {
+    chrome.runtime.onMessage.addListener((msg) => {
+      if (msg?.type === 'capture:updated' && uiMode === 'captures') {
+        refreshCaptures();
+      }
+    });
+  }
 
   document.addEventListener('keydown', (e) => {
+    if (uiMode !== 'editor') return;
     if (e.ctrlKey || e.metaKey) {
       if (e.shiftKey && e.key === 'F') { e.preventDefault(); formatContent(); }
       if (e.shiftKey && e.key === 'M') { e.preventDefault(); minifyContent(); }
@@ -1533,6 +2383,7 @@ async function init() {
 
   // beforeinput: push current state to undo before typing (enables Ctrl+Z)
   editor.addEventListener('beforeinput', (e) => {
+    if (searchQuery) clearSearchHighlights(editorCode);
     if (isUndoRedo || foldedLines.size > 0) return;
     const types = ['insertText', 'insertFromDrop', 'insertLineBreak',
       'deleteContentBackward', 'deleteContentForward', 'deleteByCut'];
@@ -1567,10 +2418,12 @@ async function init() {
   addTabBtn.addEventListener('click', () => addTab());
   copyBtn.addEventListener('click', copyContent);
   formatBtn.addEventListener('click', formatContent);
-  clearBtn.addEventListener('click', clearContent);
+  clearBtn.addEventListener('click', handleClearAction);
   minifyBtn.addEventListener('click', minifyContent);
+  if (validateBtn) validateBtn.addEventListener('click', validateStoreContent);
   duplicateBtn.addEventListener('click', () => duplicateTab(activeTabId));
   downloadBtn.addEventListener('click', downloadContent);
+  if (moveToCompareBtn) moveToCompareBtn.addEventListener('click', moveEditorToCompare);
   collapseBtn.addEventListener('click', collapseAll);
   expandBtn.addEventListener('click', expandAll);
   foldGutter.addEventListener('click', onFoldGutterClick);
@@ -1589,10 +2442,11 @@ async function init() {
   // Save when panel is closed/hidden so changes persist (debounce may not have fired).
   // Send to background script so persistence completes even if panel context is torn down.
   function saveBeforeClose() {
+    stopCapturePolling();
     flushActiveTab();
     if (hasStorage()) {
-      storageSet({ tabs, [LAST_ACTIVE_TAB_KEY]: activeTabId }).catch(() => {});
-      sendRuntimeMessage({ type: 'saveTabs', tabs, lastActiveTabId: activeTabId }).catch(() => {});
+      chrome.storage.local.set({ tabs, [LAST_ACTIVE_TAB_KEY]: activeTabId }).catch(() => {});
+      chrome.runtime.sendMessage({ type: 'saveTabs', tabs, lastActiveTabId: activeTabId }).catch(() => {});
     }
   }
   document.addEventListener('visibilitychange', () => {

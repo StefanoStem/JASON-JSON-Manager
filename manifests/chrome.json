@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "JASON (JSON Manager)",
-  "version": "1.1.2",
+  "version": "1.2.0",
   "description": "Quick sidebar for saving and managing JSON snippets",
   "content_security_policy": {
     "extension_pages": "default-src 'self'; connect-src 'none'; script-src 'self'; object-src 'self'"
@@ -18,7 +18,15 @@
   "action": {
     "default_title": "Open JASON"
   },
-  "permissions": ["sidePanel", "storage"],
+  "permissions": ["sidePanel", "storage", "tabs"],
+  "host_permissions": ["<all_urls>"],
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content-capture.js"],
+      "run_at": "document_start"
+    }
+  ],
   "background": {
     "service_worker": "background.js"
   }
