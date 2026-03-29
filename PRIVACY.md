@@ -1,6 +1,6 @@
 # Privacy Policy
 
-**Last updated:** March 2026 (v1.3.0)
+**Last updated:** March 2026 (v1.2.0)
 
 JASON does not collect, transmit, or share any data with external services. All snippets, settings, and captures are stored locally in your browser using `chrome.storage.local` and never leave your device.
 

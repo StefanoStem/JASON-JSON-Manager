@@ -456,11 +456,61 @@ function getCompareInputPlainText(element, side) {
   return element.textContent || '';
 }
 
+function getSelectionOffsetWithin(element) {
+  try {
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) return -1;
+    const range = selection.getRangeAt(0);
+    if (!element.contains(range.startContainer)) return -1;
+    const preRange = range.cloneRange();
+    preRange.selectNodeContents(element);
+    preRange.setEnd(range.startContainer, range.startOffset);
+    return (preRange.toString() || '').length;
+  } catch {
+    return -1;
+  }
+}
+
+function setSelectionOffsetWithin(element, targetOffset) {
+  try {
+    const selection = window.getSelection();
+    if (!selection) return;
+    const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+    let node = walker.nextNode();
+    let consumed = 0;
+
+    while (node) {
+      const len = node.nodeValue ? node.nodeValue.length : 0;
+      if (consumed + len >= targetOffset) {
+        const range = document.createRange();
+        range.setStart(node, Math.max(0, targetOffset - consumed));
+        range.collapse(true);
+        selection.removeAllRanges();
+        selection.addRange(range);
+        return;
+      }
+      consumed += len;
+      node = walker.nextNode();
+    }
+
+    // Fallback: place caret at end when targetOffset exceeds current length.
+    const fallback = document.createRange();
+    fallback.selectNodeContents(element);
+    fallback.collapse(false);
+    selection.removeAllRanges();
+    selection.addRange(fallback);
+  } catch {
+    // ignore selection errors
+  }
+}
+
 function ensureCompareEditorPlainText(element, side) {
   if (!element || element.dataset.compareRendered !== 'true') return;
+  const cursorOffset = getSelectionOffsetWithin(element);
   const text = side === 'left' ? (compareDraft.leftText || '') : (compareDraft.rightText || '');
   element.textContent = text;
   element.dataset.compareRendered = 'false';
+  if (cursorOffset >= 0) setSelectionOffsetWithin(element, Math.min(cursorOffset, text.length));
 }
 
 function insertPlainTextAtSelection(target, text) {
@@ -482,8 +532,24 @@ function insertPlainTextAtSelection(target, text) {
 }
 
 function runCompare() {
-  compareDraft.leftText = getCompareInputPlainText(compareLeftInput, 'left');
-  compareDraft.rightText = getCompareInputPlainText(compareRightInput, 'right');
+  const rawLeft = getCompareInputPlainText(compareLeftInput, 'left');
+  const rawRight = getCompareInputPlainText(compareRightInput, 'right');
+
+  // Ignore indentation/whitespace-only differences when both inputs are valid JSON.
+  // We compare canonical pretty JSON so "same data, different spacing" is a match.
+  let leftText = rawLeft;
+  let rightText = rawRight;
+  try {
+    const leftParsed = JSON.parse(String(rawLeft || '').trim());
+    const rightParsed = JSON.parse(String(rawRight || '').trim());
+    leftText = JSON.stringify(leftParsed, null, 2);
+    rightText = JSON.stringify(rightParsed, null, 2);
+  } catch {
+    // Keep raw text comparison when one side is not valid JSON yet.
+  }
+
+  compareDraft.leftText = leftText;
+  compareDraft.rightText = rightText;
   const diff = computeLineDiff(compareDraft.leftText, compareDraft.rightText);
   renderCompareResult(compareLeftInput, diff.leftLines, diff.leftDiff, diff.rightLines);
   renderCompareResult(compareRightInput, diff.rightLines, diff.rightDiff, diff.leftLines);
