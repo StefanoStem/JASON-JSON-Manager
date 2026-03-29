@@ -566,6 +566,15 @@ function formatCaptureTime(ts) {
   }
 }
 
+function formatCaptureTimestamp(ts) {
+  try {
+    const d = new Date(ts);
+    return `${d.toLocaleDateString()} ${d.toLocaleTimeString()}`;
+  } catch {
+    return '';
+  }
+}
+
 function filteredCaptures() {
   if (!searchQuery) return captureItems;
   return captureItems.filter((item) => (
@@ -619,11 +628,12 @@ function renderCaptureList() {
 
     const title = document.createElement('div');
     title.className = 'capture-item-title';
-    title.textContent = item.urlPath || item.url || '(unknown URL)';
+    const shortId = String(item.id || '').slice(-6);
+    title.textContent = `${item.urlPath || item.url || '(unknown URL)'} • #${shortId}`;
 
     const meta = document.createElement('div');
     meta.className = 'capture-item-meta';
-    meta.textContent = `${item.method || 'GET'} ${item.status || '-'} • ${formatCaptureTime(item.ts)}`;
+    meta.textContent = `${item.method || 'GET'} ${item.status || '-'} • ${formatCaptureTimestamp(item.ts)} • #${shortId}`;
 
     const topRow = document.createElement('div');
     topRow.className = 'capture-row-top';
@@ -668,23 +678,64 @@ function renderCaptureList() {
 }
 
 async function refreshCaptures() {
-  const res = await runtimeMessage({ type: 'capture:list', tabId: currentBrowserTabId });
+  // Always resolve from current active browser tab first, so scan/list
+  // cannot get stuck on a stale tab id after navigation.
+  const res = await runtimeMessage({ type: 'capture:list' });
   if (typeof res?.tabId === 'number') currentBrowserTabId = res.tabId;
   captureItems = Array.isArray(res?.items) ? res.items : [];
   renderCaptureList();
 }
 
+function waitMs(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function runCaptureScan() {
+  const startedAt = Date.now();
+  const initialCount = captureItems.length;
   if (runCaptureScanBtn) {
     runCaptureScanBtn.disabled = true;
     runCaptureScanBtn.textContent = 'Scanning...';
   }
-  const scanRes = await runtimeMessage({ type: 'capture:scanCurrentTab', tabId: currentBrowserTabId });
-  if (typeof scanRes?.tabId === 'number') currentBrowserTabId = scanRes.tabId;
-  await refreshCaptures();
-  if (runCaptureScanBtn) {
-    runCaptureScanBtn.disabled = false;
-    runCaptureScanBtn.textContent = 'Run Scan';
+  try {
+    // Refresh once to resolve the active tab id before scanning.
+    const activeRes = await runtimeMessage({ type: 'capture:list' });
+    if (typeof activeRes?.tabId === 'number') currentBrowserTabId = activeRes.tabId;
+
+    let scanRes = await runtimeMessage({ type: 'capture:scanCurrentTab', tabId: currentBrowserTabId });
+    // Retry once when content script was not ready (common after extension reload).
+    if (!scanRes?.ok) {
+      await waitMs(250);
+      const retryActive = await runtimeMessage({ type: 'capture:list' });
+      if (typeof retryActive?.tabId === 'number') currentBrowserTabId = retryActive.tabId;
+      scanRes = await runtimeMessage({ type: 'capture:scanCurrentTab', tabId: currentBrowserTabId });
+    }
+    if (typeof scanRes?.tabId === 'number') currentBrowserTabId = scanRes.tabId;
+
+    // Poll briefly so late capture:add writes can land before UI reports no results.
+    // This avoids the "button reacts too fast" feeling on slower pages.
+    let attempts = 0;
+    do {
+      await refreshCaptures();
+      if ((scanRes?.count || 0) > 0 || captureItems.length > initialCount) break;
+      attempts++;
+      if (attempts < 4) await waitMs(250);
+    } while (attempts < 4);
+
+    if (!scanRes?.ok) {
+      captureDetailMeta.textContent = 'Scan script is not ready for this tab yet. Refresh this page and run scan again.';
+    } else if ((scanRes?.count || 0) === 0 && captureItems.length <= initialCount) {
+      captureDetailMeta.textContent = 'Scan completed. No JSON blocks were found on this page.';
+    } else if ((scanRes?.count || 0) > 0) {
+      captureDetailMeta.textContent = `Scan completed. Found ${scanRes.count} item${scanRes.count === 1 ? '' : 's'}.`;
+    }
+  } finally {
+    const elapsed = Date.now() - startedAt;
+    if (elapsed < 700) await waitMs(700 - elapsed);
+    if (runCaptureScanBtn) {
+      runCaptureScanBtn.disabled = false;
+      runCaptureScanBtn.textContent = 'Run Scan';
+    }
   }
 }
 
@@ -2211,6 +2262,7 @@ async function init() {
   if (refreshCapturesBtn) refreshCapturesBtn.addEventListener('click', refreshCaptures);
   if (clearCapturesBtn) {
     clearCapturesBtn.addEventListener('click', async () => {
+      await refreshCaptures();
       await runtimeMessage({ type: 'capture:clear', tabId: currentBrowserTabId });
       selectedCaptureId = null;
       selectedCaptureIds = [];

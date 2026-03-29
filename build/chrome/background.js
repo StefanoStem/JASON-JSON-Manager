@@ -64,7 +64,9 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
       const item = normalizeCapture(msg.payload);
       const existing = Array.isArray(captureState.capturesByTab[key]) ? captureState.capturesByTab[key] : [];
-      const next = [item, ...existing].slice(0, CAPTURE_MAX_PER_TAB);
+      // Keep capture list in chronological order (oldest -> newest),
+      // so first captured item appears at the top.
+      const next = [...existing, item].slice(-CAPTURE_MAX_PER_TAB);
       captureState.capturesByTab[key] = next;
       await chrome.storage.local.set({ [CAPTURE_STATE_KEY]: captureState });
       chrome.runtime.sendMessage({ type: 'capture:updated', tabId: senderTabId }).catch(() => {});
