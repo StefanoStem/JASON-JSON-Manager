@@ -2,6 +2,7 @@
 const CAPTURE_STATE_KEY = 'captureState';
 const CAPTURE_MAX_PER_TAB = 80;
 const CAPTURE_MAX_BODY_CHARS = 120000;
+let lastActiveTabId = null;
 
 function tabKey(tabId) {
   return String(typeof tabId === 'number' ? tabId : 'global');
@@ -47,6 +48,16 @@ async function getActiveTabId() {
 function getCaptureState(rawState) {
   const state = rawState && typeof rawState === 'object' ? rawState : {};
   return { capturesByTab: state.capturesByTab || {} };
+}
+
+async function clearCapturesForTab(tabId) {
+  if (typeof tabId !== 'number') return;
+  const state = await chrome.storage.local.get([CAPTURE_STATE_KEY]);
+  const captureState = getCaptureState(state[CAPTURE_STATE_KEY]);
+  if (!captureState.capturesByTab) captureState.capturesByTab = {};
+  captureState.capturesByTab[tabKey(tabId)] = [];
+  await chrome.storage.local.set({ [CAPTURE_STATE_KEY]: captureState });
+  chrome.runtime.sendMessage({ type: 'capture:updated', tabId }).catch(() => {});
 }
 
 // Persist tabs and handle capture routing
@@ -106,6 +117,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         sendResponse({ ok: false, count: 0 });
         return;
       }
+      if (msg.confirmed !== true) {
+        sendResponse({ ok: false, count: 0, tabId: activeTabId, reason: 'confirmation_required' });
+        return;
+      }
       try {
         const result = await chrome.tabs.sendMessage(activeTabId, { type: 'capture:scanPage' });
         sendResponse({ ok: true, count: result?.count || 0, tabId: activeTabId });
@@ -126,3 +141,32 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   });
   return true;
 });
+
+if (chrome.tabs?.onUpdated) {
+  chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+    // Clear captures when the top-level page changes in this tab.
+    if (typeof changeInfo?.url === 'string' && changeInfo.url.length > 0) {
+      clearCapturesForTab(tabId).catch(() => {});
+    }
+  });
+}
+
+if (chrome.tabs?.onRemoved) {
+  chrome.tabs.onRemoved.addListener((tabId) => {
+    clearCapturesForTab(tabId).catch(() => {});
+    if (lastActiveTabId === tabId) lastActiveTabId = null;
+  });
+}
+
+if (chrome.tabs?.onActivated) {
+  chrome.tabs.onActivated.addListener(({ tabId }) => {
+    // Capture-only privacy hardening: wipe capture buffers on tab switch.
+    if (typeof lastActiveTabId === 'number' && lastActiveTabId !== tabId) {
+      clearCapturesForTab(lastActiveTabId).catch(() => {});
+    }
+    if (typeof tabId === 'number') {
+      clearCapturesForTab(tabId).catch(() => {});
+      lastActiveTabId = tabId;
+    }
+  });
+}

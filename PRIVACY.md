@@ -7,6 +7,7 @@ JASON does not collect, transmit, or share any data with external services. All 
 - **No analytics or tracking**
 - **No third-party services**
 - **Optional local capture only:** when triggered by you via **Run Scan**, JASON inspects JSON-like content already present in the current page (for example `script[type*="json"]`, `pre`, and `code` blocks) so it can be viewed in the sidebar.
+- **Capture retention:** capture items are scoped to the current tab context and remain local until you clear them, switch tabs, close the tab, or the tab navigates to a different page.
 
 ### Permissions used
 

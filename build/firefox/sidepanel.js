@@ -61,6 +61,9 @@ const captureList = document.getElementById('captureList');
 const captureDetailMeta = document.getElementById('captureDetailMeta');
 const captureDetailCode = document.getElementById('captureDetailCode');
 const runCaptureScanBtn = document.getElementById('runCaptureScanBtn');
+const captureScanConfirm = document.getElementById('captureScanConfirm');
+const captureScanConfirmYes = document.getElementById('captureScanConfirmYes');
+const captureScanConfirmNo = document.getElementById('captureScanConfirmNo');
 const refreshCapturesBtn = document.getElementById('refreshCapturesBtn');
 const clearCapturesBtn = document.getElementById('clearCapturesBtn');
 const compareSelectedCapturesBtn = document.getElementById('compareSelectedCapturesBtn');
@@ -90,6 +93,7 @@ let selectedCaptureId = null;
 let currentBrowserTabId = null;
 let capturePollTimer = null;
 let selectedCaptureIds = [];
+let captureScanArmed = false;
 
 function hasStorage() {
   return typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local;
@@ -166,6 +170,10 @@ function setMode(nextMode, options = {}) {
   if (captureModeBtn) {
     captureModeBtn.setAttribute('aria-pressed', String(isCaptures));
     captureModeBtn.classList.toggle('active', isCaptures);
+  }
+  if (!isCaptures) {
+    hideCaptureScanConfirm();
+    captureScanArmed = false;
   }
 
   if (isCompare) {
@@ -756,7 +764,43 @@ function waitMs(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function hideCaptureScanConfirm() {
+  if (captureScanConfirm) captureScanConfirm.classList.add('hidden');
+}
+
+function askCaptureScanConfirmation() {
+  return new Promise((resolve) => {
+    if (!captureScanConfirm || !captureScanConfirmYes || !captureScanConfirmNo) {
+      resolve(true);
+      return;
+    }
+
+    const cleanup = () => {
+      captureScanConfirmYes.removeEventListener('click', onConfirm);
+      captureScanConfirmNo.removeEventListener('click', onCancel);
+    };
+    const onConfirm = () => {
+      cleanup();
+      hideCaptureScanConfirm();
+      resolve(true);
+    };
+    const onCancel = () => {
+      cleanup();
+      hideCaptureScanConfirm();
+      resolve(false);
+    };
+
+    captureScanConfirm.classList.remove('hidden');
+    captureScanConfirmYes.addEventListener('click', onConfirm, { once: true });
+    captureScanConfirmNo.addEventListener('click', onCancel, { once: true });
+    captureScanConfirmYes.focus();
+  });
+}
+
 async function runCaptureScan() {
+  if (!captureScanArmed) return;
+  // One-shot guard: every scan must be preceded by an explicit confirmation.
+  captureScanArmed = false;
   const startedAt = Date.now();
   const initialCount = captureItems.length;
   if (runCaptureScanBtn) {
@@ -768,13 +812,13 @@ async function runCaptureScan() {
     const activeRes = await runtimeMessage({ type: 'capture:list' });
     if (typeof activeRes?.tabId === 'number') currentBrowserTabId = activeRes.tabId;
 
-    let scanRes = await runtimeMessage({ type: 'capture:scanCurrentTab', tabId: currentBrowserTabId });
+    let scanRes = await runtimeMessage({ type: 'capture:scanCurrentTab', tabId: currentBrowserTabId, confirmed: true });
     // Retry once when content script was not ready (common after extension reload).
     if (!scanRes?.ok) {
       await waitMs(250);
       const retryActive = await runtimeMessage({ type: 'capture:list' });
       if (typeof retryActive?.tabId === 'number') currentBrowserTabId = retryActive.tabId;
-      scanRes = await runtimeMessage({ type: 'capture:scanCurrentTab', tabId: currentBrowserTabId });
+      scanRes = await runtimeMessage({ type: 'capture:scanCurrentTab', tabId: currentBrowserTabId, confirmed: true });
     }
     if (typeof scanRes?.tabId === 'number') currentBrowserTabId = scanRes.tabId;
 
@@ -2324,7 +2368,14 @@ async function init() {
       clearCompareInput('right');
     });
   }
-  if (runCaptureScanBtn) runCaptureScanBtn.addEventListener('click', runCaptureScan);
+  if (runCaptureScanBtn) {
+    runCaptureScanBtn.addEventListener('click', async () => {
+      const confirmed = await askCaptureScanConfirmation();
+      if (!confirmed) return;
+      captureScanArmed = true;
+      await runCaptureScan();
+    });
+  }
   if (refreshCapturesBtn) refreshCapturesBtn.addEventListener('click', refreshCaptures);
   if (clearCapturesBtn) {
     clearCapturesBtn.addEventListener('click', async () => {
