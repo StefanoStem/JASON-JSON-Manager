@@ -104,10 +104,31 @@ Browser-specific entry points:
 
 `build.sh` creates clean Chrome/Firefox builds by copying shared assets plus browser-specific manifests and backgrounds.
 
+## Permissions Justification
+
+### `tabs`
+
+JASON uses the `tabs` permission only to resolve the currently active tab so capture actions run in the correct context.  
+It is used to run user-triggered scans, and to list/clear captures for the active tab only.
+
+### `host_permissions` (`<all_urls>`)
+
+JASON uses host access so users can manually run **Run Scan** on pages they choose and extract JSON-like content visible in that page context (for example JSON blocks in script/code/pre areas).  
+No scan runs automatically in the background on behalf of the user.
+
 ## Privacy
 
 JASON makes zero network requests and stores data locally in browser storage.
 See [PRIVACY.md](PRIVACY.md) for full details.
+
+## Responsible Use
+
+JASON is a local tool, but users are responsible for using it in compliance with applicable laws, internal policies, and website terms of service.  
+Some websites may restrict automated data extraction or reuse of page content.
+
+## Terms
+
+Use of JASON is subject to [TERMS.md](TERMS.md), including authorized-use, compliance, and limitation-of-liability terms.
 
 ## Support
 

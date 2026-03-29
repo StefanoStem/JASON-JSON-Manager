@@ -17,6 +17,11 @@ JASON does not collect, transmit, or share any data with external services. All 
 | `tabs` | Resolve the active tab so capture can be enabled/queried per tab |
 | `content_scripts` + `<all_urls>` host access | Allow manual page scan (`Run Scan`) to inspect JSON-like content in the current tab |
 
+### Responsible use
+
+JASON performs local processing only, but users are responsible for ensuring use complies with applicable laws, company policies, and website terms of service.
+See [TERMS.md](TERMS.md) for full use terms and limitation-of-liability language.
+
 ### Contact
 
 Questions? [Open an issue](https://github.com/StefanoStem/JASON-JSON-Manager/issues).

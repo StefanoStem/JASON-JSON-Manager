@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "JASON (JSON Manager)",
   "version": "1.2.0",
-  "description": "Quick sidebar for saving and managing JSON snippets",
+  "description": "Local-first JSON sidebar to capture, compare, and manage JSON payloads",
   "content_security_policy": {
     "extension_pages": "default-src 'self'; connect-src 'none'; script-src 'self'; object-src 'self'"
   },

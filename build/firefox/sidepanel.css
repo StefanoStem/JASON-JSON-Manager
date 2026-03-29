@@ -1093,6 +1093,21 @@ mark.search-hit {
   gap: 8px;
 }
 
+.capture-disclaimer {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.capture-disclaimer strong {
+  color: var(--text-primary);
+}
+
 .capture-list {
   border: 1px solid var(--border);
   border-radius: 6px;
