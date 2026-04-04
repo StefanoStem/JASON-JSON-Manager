@@ -841,7 +841,7 @@ async function runCaptureScan() {
         captureDetailMeta.textContent = 'Scan script is not ready for this tab yet. Refresh this page and run scan again.';
       }
     } else if ((scanRes?.count || 0) === 0 && captureItems.length <= initialCount) {
-      captureDetailMeta.textContent = 'Scan completed. No JSON blocks were found on this page.';
+      captureDetailMeta.textContent = 'Scan completed. No JSON blocks were found. Try refreshing this page and run scan again.';
     } else if ((scanRes?.count || 0) > 0) {
       captureDetailMeta.textContent = `Scan completed. Found ${scanRes.count} item${scanRes.count === 1 ? '' : 's'}.`;
     }
