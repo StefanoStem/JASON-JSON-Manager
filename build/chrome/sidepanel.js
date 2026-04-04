@@ -814,7 +814,7 @@ async function runCaptureScan() {
 
     let scanRes = await runtimeMessage({ type: 'capture:scanCurrentTab', tabId: currentBrowserTabId, confirmed: true });
     // Retry once when content script was not ready (common after extension reload).
-    if (!scanRes?.ok) {
+    if (!scanRes?.ok && scanRes?.reason !== 'restricted_page' && scanRes?.reason !== 'confirmation_required') {
       await waitMs(250);
       const retryActive = await runtimeMessage({ type: 'capture:list' });
       if (typeof retryActive?.tabId === 'number') currentBrowserTabId = retryActive.tabId;
@@ -833,7 +833,13 @@ async function runCaptureScan() {
     } while (attempts < 4);
 
     if (!scanRes?.ok) {
-      captureDetailMeta.textContent = 'Scan script is not ready for this tab yet. Refresh this page and run scan again.';
+      if (scanRes?.reason === 'restricted_page') {
+        captureDetailMeta.textContent = 'Scan is unavailable on this page. Try a normal http(s) page and run scan again.';
+      } else if (scanRes?.reason === 'confirmation_required') {
+        captureDetailMeta.textContent = 'Scan requires explicit confirmation. Click Run Scan and confirm to continue.';
+      } else {
+        captureDetailMeta.textContent = 'Scan script is not ready for this tab yet. Refresh this page and run scan again.';
+      }
     } else if ((scanRes?.count || 0) === 0 && captureItems.length <= initialCount) {
       captureDetailMeta.textContent = 'Scan completed. No JSON blocks were found on this page.';
     } else if ((scanRes?.count || 0) > 0) {

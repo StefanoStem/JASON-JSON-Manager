@@ -18,15 +18,7 @@
   "action": {
     "default_title": "Open JASON"
   },
-  "permissions": ["sidePanel", "storage", "tabs"],
-  "host_permissions": ["<all_urls>"],
-  "content_scripts": [
-    {
-      "matches": ["<all_urls>"],
-      "js": ["content-capture.js"],
-      "run_at": "document_start"
-    }
-  ],
+  "permissions": ["sidePanel", "storage", "tabs", "activeTab", "scripting"],
   "background": {
     "service_worker": "background.js"
   }
