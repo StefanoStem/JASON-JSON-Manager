@@ -2,15 +2,69 @@
   const MAX_SCAN_ITEMS = 12;
   const MAX_TEXT_LEN = 120000;
 
+  function readBalancedJson(text, startIndex) {
+    const startChar = text[startIndex];
+    const endChar = startChar === '{' ? '}' : startChar === '[' ? ']' : '';
+    if (!endChar) return null;
+
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+
+    for (let i = startIndex; i < text.length; i++) {
+      const ch = text[i];
+      if (inString) {
+        if (escaped) {
+          escaped = false;
+          continue;
+        }
+        if (ch === '\\') {
+          escaped = true;
+          continue;
+        }
+        if (ch === '"') inString = false;
+        continue;
+      }
+      if (ch === '"') {
+        inString = true;
+        continue;
+      }
+      if (ch === startChar) depth++;
+      if (ch === endChar) {
+        depth--;
+        if (depth === 0) return text.slice(startIndex, i + 1);
+      }
+    }
+    return null;
+  }
+
   function parseCandidate(text) {
     const raw = String(text || '').trim();
     if (!raw) return null;
-    if (!raw.startsWith('{') && !raw.startsWith('[')) return null;
-    try {
-      return JSON.parse(raw);
-    } catch {
-      return null;
+
+    const quickCandidates = [
+      raw,
+      raw.replace(/^\)\]\}',?\s*/, '').trim()
+    ];
+    for (const candidate of quickCandidates) {
+      if (!candidate) continue;
+      if (!candidate.startsWith('{') && !candidate.startsWith('[')) continue;
+      try {
+        return JSON.parse(candidate);
+      } catch (_) {}
     }
+
+    // Fallback: extract the first balanced JSON object/array from mixed text.
+    for (let i = 0; i < raw.length; i++) {
+      const ch = raw[i];
+      if (ch !== '{' && ch !== '[') continue;
+      const snippet = readBalancedJson(raw, i);
+      if (!snippet) continue;
+      try {
+        return JSON.parse(snippet);
+      } catch (_) {}
+    }
+    return null;
   }
 
   function normalizeBody(value) {
@@ -26,6 +80,8 @@
       ...document.querySelectorAll('pre'),
       ...document.querySelectorAll('code')
     ];
+    // Some pages render JSON samples as regular body text, not <pre>/<code>.
+    if (document.body) sources.push(document.body);
 
     for (const node of sources) {
       if (out.length >= MAX_SCAN_ITEMS) break;
