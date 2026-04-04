@@ -19,7 +19,6 @@
     "default_title": "Open JASON"
   },
   "permissions": ["sidePanel", "storage", "tabs", "activeTab", "scripting"],
-  "host_permissions": ["http://*/*", "https://*/*"],
   "background": {
     "service_worker": "background.js"
   }
