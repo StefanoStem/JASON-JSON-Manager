@@ -796,7 +796,7 @@ async function runCaptureScan() {
       } else if (scanRes?.reason === 'scripting_unavailable') {
         captureDetailMeta.textContent = 'Scan is not supported in this browser build. Use a current version of Chrome.';
       } else if (scanRes?.reason === 'injection_failed') {
-        captureDetailMeta.textContent = 'Scan could not read this page. Click the JASON icon in the toolbar while this tab is selected, then try Run Scan again. Reload the tab if it still fails.';
+        captureDetailMeta.textContent = 'Scan could not reach this page (content script not loaded). Refresh the tab, or reload the extension after an update, then try Run Scan again.';
       } else {
         captureDetailMeta.textContent = 'Scan script is not ready for this tab yet. Refresh this page and run scan again.';
       }

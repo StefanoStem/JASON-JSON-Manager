@@ -6,7 +6,6 @@ chrome.sidePanel
 const CAPTURE_STATE_KEY = 'captureState';
 const CAPTURE_MAX_PER_TAB = 80;
 const CAPTURE_MAX_BODY_CHARS = 120000;
-const CAPTURE_SCAN_MAX_ITEMS = 12;
 let lastActiveTabId = null;
 
 function tabKey(tabId) {
@@ -77,107 +76,6 @@ function isRestrictedPageUrl(url) {
   );
 }
 
-function collectPageJsonOnDemand(maxItems, maxTextLen) {
-  function readBalancedJson(text, startIndex) {
-    const startChar = text[startIndex];
-    const endChar = startChar === '{' ? '}' : startChar === '[' ? ']' : '';
-    if (!endChar) return null;
-
-    let depth = 0;
-    let inString = false;
-    let escaped = false;
-
-    for (let i = startIndex; i < text.length; i++) {
-      const ch = text[i];
-      if (inString) {
-        if (escaped) {
-          escaped = false;
-          continue;
-        }
-        if (ch === '\\') {
-          escaped = true;
-          continue;
-        }
-        if (ch === '"') inString = false;
-        continue;
-      }
-      if (ch === '"') {
-        inString = true;
-        continue;
-      }
-      if (ch === startChar) depth++;
-      if (ch === endChar) {
-        depth--;
-        if (depth === 0) return text.slice(startIndex, i + 1);
-      }
-    }
-    return null;
-  }
-
-  function parseCandidate(text) {
-    const raw = String(text || '').trim();
-    if (!raw) return null;
-
-    const quickCandidates = [
-      raw,
-      raw.replace(/^\)\]\}',?\s*/, '').trim()
-    ];
-    for (const candidate of quickCandidates) {
-      if (!candidate) continue;
-      if (!candidate.startsWith('{') && !candidate.startsWith('[')) continue;
-      try {
-        return JSON.parse(candidate);
-      } catch (_) {}
-    }
-
-    // Fallback: extract the first balanced JSON object/array from mixed text.
-    for (let i = 0; i < raw.length; i++) {
-      const ch = raw[i];
-      if (ch !== '{' && ch !== '[') continue;
-      const snippet = readBalancedJson(raw, i);
-      if (!snippet) continue;
-      try {
-        return JSON.parse(snippet);
-      } catch (_) {}
-    }
-    return null;
-  }
-
-  function normalizeBody(value) {
-    const text = typeof value === 'string' ? value : JSON.stringify(value);
-    return text.length > maxTextLen ? text.slice(0, maxTextLen) : text;
-  }
-
-  const out = [];
-  const seen = new Set();
-  const sources = [
-    ...document.querySelectorAll('script[type*="json"]'),
-    ...document.querySelectorAll('pre'),
-    ...document.querySelectorAll('code')
-  ];
-  // Some pages (like docs/examples) render JSON as plain body text rather than
-  // in <pre>/<code>, so include body as a fallback scan source.
-  if (document.body) sources.push(document.body);
-
-  for (const node of sources) {
-    if (out.length >= maxItems) break;
-    const parsed = parseCandidate(node.textContent || '');
-    if (!parsed) continue;
-    const body = normalizeBody(JSON.stringify(parsed));
-    if (seen.has(body)) continue;
-    seen.add(body);
-    out.push({
-      method: 'SCAN',
-      url: location.href,
-      status: 200,
-      contentType: 'application/json',
-      body,
-      ts: Date.now()
-    });
-  }
-  return out;
-}
-
 // Persist tabs when side panel closes (background outlives panel, so save completes)
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   (async () => {
@@ -232,16 +130,12 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
     if (msg.type === 'capture:scanCurrentTab') {
       const activeTabId = typeof msg.tabId === 'number' ? msg.tabId : await getActiveTabId();
-      if (typeof activeTabId !== 'number') {
+      if (typeof activeTabId !== 'number' || !chrome.tabs?.sendMessage) {
         sendResponse({ ok: false, count: 0 });
         return;
       }
       if (msg.confirmed !== true) {
         sendResponse({ ok: false, count: 0, tabId: activeTabId, reason: 'confirmation_required' });
-        return;
-      }
-      if (!chrome.scripting?.executeScript) {
-        sendResponse({ ok: false, count: 0, tabId: activeTabId, reason: 'scripting_unavailable' });
         return;
       }
 
@@ -252,28 +146,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           return;
         }
 
-        const execResults = await chrome.scripting.executeScript({
-          target: { tabId: activeTabId },
-          func: collectPageJsonOnDemand,
-          args: [CAPTURE_SCAN_MAX_ITEMS, CAPTURE_MAX_BODY_CHARS]
-        });
-        const payloads = Array.isArray(execResults?.[0]?.result) ? execResults[0].result : [];
-
-        if (payloads.length > 0) {
-          const state = await chrome.storage.local.get([CAPTURE_STATE_KEY]);
-          const captureState = getCaptureState(state[CAPTURE_STATE_KEY]);
-          const key = tabKey(activeTabId);
-          const existing = Array.isArray(captureState.capturesByTab[key]) ? captureState.capturesByTab[key] : [];
-          const next = [...existing];
-          for (const payload of payloads) {
-            next.push(normalizeCapture(payload));
-          }
-          captureState.capturesByTab[key] = next.slice(-CAPTURE_MAX_PER_TAB);
-          await chrome.storage.local.set({ [CAPTURE_STATE_KEY]: captureState });
-          chrome.runtime.sendMessage({ type: 'capture:updated', tabId: activeTabId }).catch(() => {});
-        }
-
-        sendResponse({ ok: true, count: payloads.length, tabId: activeTabId });
+        const result = await chrome.tabs.sendMessage(activeTabId, { type: 'capture:scanPage' });
+        sendResponse({ ok: true, count: result?.count || 0, tabId: activeTabId });
       } catch (err) {
         const message = String(err?.message || '');
         const reason = /Cannot access|Missing host permission|chrome:\/\//i.test(message)
