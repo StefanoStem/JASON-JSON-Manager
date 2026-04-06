@@ -21,7 +21,7 @@
 ## Product Overview
 
 JASON 1.2.0 is built as a local-first JSON workspace inside your browser side panel.
-It is designed for API testers, frontend/backend engineers, QA, and anyone who needs
+It is designed for API testers, frontend/backend engineers, and anyone who needs
 to quickly inspect and work with JSON without leaving the current page.
 
 ### Core workspace modes
@@ -72,19 +72,14 @@ cd JASON-JSON-Manager
 ./build.sh
 ```
 
-Load unpacked:
-
-- **Chrome:** `chrome://extensions` → Developer mode → Load unpacked → `build/chrome`
-- **Firefox:** `about:debugging#/runtime/this-firefox` → Load Temporary Add-on → `build/firefox/manifest.json`
-
 Build outputs:
 
 | Output | Purpose |
 |---|---|
 | `build/chrome/` | Unpacked extension for Chrome |
 | `build/firefox/` | Unpacked extension for Firefox |
-| `build/jason-chrome.zip` | Chrome store submission artifact |
-| `build/jason-firefox.zip` | Firefox add-ons submission artifact |
+| `build/jason-chrome.zip` | Packaged Chrome extension (zip) |
+| `build/jason-firefox.zip` | Packaged Firefox extension (zip) |
 
 ## Architecture
 
