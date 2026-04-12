@@ -769,7 +769,7 @@ async function runCaptureScan() {
     if (typeof activeRes?.tabId === 'number') currentBrowserTabId = activeRes.tabId;
 
     let scanRes = await runtimeMessage({ type: 'capture:scanCurrentTab', tabId: currentBrowserTabId, confirmed: true });
-    // Retry once when content script was not ready (common after extension reload).
+    // Retry once if the first scan attempt races page readiness.
     if (!scanRes?.ok && scanRes?.reason !== 'restricted_page' && scanRes?.reason !== 'confirmation_required') {
       await waitMs(250);
       const retryActive = await runtimeMessage({ type: 'capture:list' });
@@ -792,13 +792,11 @@ async function runCaptureScan() {
       if (scanRes?.reason === 'restricted_page') {
         captureDetailMeta.textContent = 'Scan is unavailable on this page. Try a normal http(s) page and run scan again.';
       } else if (scanRes?.reason === 'confirmation_required') {
-        captureDetailMeta.textContent = 'Scan requires explicit confirmation. Click Run Scan and confirm to continue.';
-      } else if (scanRes?.reason === 'scripting_unavailable') {
-        captureDetailMeta.textContent = 'Scan is not supported in this browser build. Use a current version of Chrome.';
+        captureDetailMeta.textContent = 'Scan needs confirmation before it can run. Try Run Scan again.';
       } else if (scanRes?.reason === 'injection_failed') {
-        captureDetailMeta.textContent = 'Scan could not reach this page (content script not loaded). Refresh the tab, or reload the extension after an update, then try Run Scan again.';
+        captureDetailMeta.textContent = 'Scan could not read this page. Refresh the page and try Run Scan again.';
       } else {
-        captureDetailMeta.textContent = 'Scan script is not ready for this tab yet. Refresh this page and run scan again.';
+        captureDetailMeta.textContent = 'Scan did not complete. Refresh the page and try Run Scan again.';
       }
     } else if ((scanRes?.count || 0) === 0 && captureItems.length <= initialCount) {
       captureDetailMeta.textContent = 'Scan completed. No JSON blocks were found. Try refreshing this page and run scan again.';
