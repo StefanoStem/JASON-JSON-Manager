@@ -2,7 +2,104 @@
 const CAPTURE_STATE_KEY = 'captureState';
 const CAPTURE_MAX_PER_TAB = 80;
 const CAPTURE_MAX_BODY_CHARS = 120000;
+/** Conservative cap vs extension storage quota so capture writes fail predictably with eviction. */
+const CAPTURE_STORAGE_BUDGET_BYTES = 8 * 1024 * 1024;
 let lastActiveTabId = null;
+
+function derivePrettyBody(body) {
+  if (typeof body !== 'string') return '';
+  try {
+    return JSON.stringify(JSON.parse(body), null, 2);
+  } catch (_) {
+    return body;
+  }
+}
+
+function enrichCaptureItem(item) {
+  if (!item || typeof item !== 'object') return item;
+  return { ...item, prettyBody: derivePrettyBody(item.body) };
+}
+
+function slimCaptureState(captureState) {
+  const out = { capturesByTab: {} };
+  for (const [k, arr] of Object.entries(captureState.capturesByTab || {})) {
+    if (!Array.isArray(arr)) continue;
+    out.capturesByTab[k] = arr.map((item) => {
+      if (!item || typeof item !== 'object') return item;
+      const { prettyBody, ...rest } = item;
+      return rest;
+    });
+  }
+  return out;
+}
+
+function evictOldestCaptureOnce(captureState) {
+  const byTab = captureState.capturesByTab;
+  if (!byTab || typeof byTab !== 'object') return false;
+  let bestKey = null;
+  let bestIdx = -1;
+  let bestTs = Infinity;
+  for (const [key, arr] of Object.entries(byTab)) {
+    if (!Array.isArray(arr) || arr.length === 0) continue;
+    for (let idx = 0; idx < arr.length; idx++) {
+      const item = arr[idx];
+      const t = typeof item?.ts === 'number' ? item.ts : 0;
+      if (t < bestTs) {
+        bestTs = t;
+        bestKey = key;
+        bestIdx = idx;
+      }
+    }
+  }
+  if (bestKey === null || bestIdx < 0) return false;
+  byTab[bestKey].splice(bestIdx, 1);
+  return true;
+}
+
+async function measureMergedStorageBytes(patch) {
+  const all = await chrome.storage.local.get(null);
+  for (const [k, v] of Object.entries(patch)) all[k] = v;
+  return new Blob([JSON.stringify(all)]).size;
+}
+
+async function writeCaptureState(captureState) {
+  const slim = slimCaptureState(captureState);
+  for (;;) {
+    const bytes = await measureMergedStorageBytes({ [CAPTURE_STATE_KEY]: slim });
+    if (bytes <= CAPTURE_STORAGE_BUDGET_BYTES) break;
+    if (!evictOldestCaptureOnce(slim)) {
+      return { ok: false, reason: 'quota_exceeded' };
+    }
+  }
+  try {
+    await chrome.storage.local.set({ [CAPTURE_STATE_KEY]: slim });
+    return { ok: true };
+  } catch (_e) {
+    return { ok: false, reason: 'quota_exceeded' };
+  }
+}
+
+async function injectCaptureScanner(tabId) {
+  try {
+    if (chrome.scripting?.executeScript) {
+      await chrome.scripting.executeScript({ target: { tabId }, files: ['content-capture.js'] });
+      return true;
+    }
+    if (chrome.tabs?.executeScript) {
+      await new Promise((resolve, reject) => {
+        chrome.tabs.executeScript(tabId, { file: 'content-capture.js' }, () => {
+          const err = chrome.runtime.lastError;
+          if (err) reject(new Error(err.message));
+          else resolve();
+        });
+      });
+      return true;
+    }
+  } catch (_e) {
+    /* ignore */
+  }
+  return false;
+}
 
 function tabKey(tabId) {
   return String(typeof tabId === 'number' ? tabId : 'global');
@@ -12,10 +109,6 @@ function normalizeCapture(payload) {
   const body = typeof payload.body === 'string'
     ? payload.body.slice(0, CAPTURE_MAX_BODY_CHARS)
     : '';
-  let prettyBody = body;
-  try {
-    prettyBody = JSON.stringify(JSON.parse(body), null, 2);
-  } catch (_) {}
   let urlPath = payload.url || '';
   try {
     urlPath = new URL(payload.url).pathname || payload.url;
@@ -30,7 +123,6 @@ function normalizeCapture(payload) {
     status: payload.status || 0,
     contentType: payload.contentType || '',
     body,
-    prettyBody,
     size: new Blob([body]).size
   };
 }
@@ -56,7 +148,7 @@ async function clearCapturesForTab(tabId) {
   const captureState = getCaptureState(state[CAPTURE_STATE_KEY]);
   if (!captureState.capturesByTab) captureState.capturesByTab = {};
   captureState.capturesByTab[tabKey(tabId)] = [];
-  await chrome.storage.local.set({ [CAPTURE_STATE_KEY]: captureState });
+  await writeCaptureState(captureState);
   chrome.runtime.sendMessage({ type: 'capture:updated', tabId }).catch(() => {});
 }
 
@@ -91,7 +183,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       // Keep capture list in chronological order (oldest -> newest),
       // so first captured item appears at the top.
       captureState.capturesByTab[key] = [...existing, item].slice(-CAPTURE_MAX_PER_TAB);
-      await chrome.storage.local.set({ [CAPTURE_STATE_KEY]: captureState });
+      const wrote = await writeCaptureState(captureState);
+      if (!wrote.ok) {
+        sendResponse({ ok: false, reason: wrote.reason || 'quota_exceeded' });
+        return;
+      }
       chrome.runtime.sendMessage({ type: 'capture:updated', tabId: senderTabId }).catch(() => {});
       sendResponse({ ok: true });
       return;
@@ -101,7 +197,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       const activeTabId = typeof msg.tabId === 'number' ? msg.tabId : await getActiveTabId();
       const state = await chrome.storage.local.get([CAPTURE_STATE_KEY]);
       const captureState = getCaptureState(state[CAPTURE_STATE_KEY]);
-      const items = captureState.capturesByTab?.[tabKey(activeTabId)] || [];
+      const raw = captureState.capturesByTab?.[tabKey(activeTabId)] || [];
+      const items = raw.map((it) => enrichCaptureItem(it));
       sendResponse({ items, tabId: activeTabId });
       return;
     }
@@ -111,7 +208,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       const state = await chrome.storage.local.get([CAPTURE_STATE_KEY]);
       const captureState = getCaptureState(state[CAPTURE_STATE_KEY]);
       if (captureState.capturesByTab) captureState.capturesByTab[tabKey(activeTabId)] = [];
-      await chrome.storage.local.set({ [CAPTURE_STATE_KEY]: captureState });
+      await writeCaptureState(captureState);
       sendResponse({ ok: true });
       return;
     }
@@ -123,7 +220,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       const key = tabKey(activeTabId);
       const items = Array.isArray(captureState.capturesByTab?.[key]) ? captureState.capturesByTab[key] : [];
       captureState.capturesByTab[key] = items.filter((item) => item.id !== msg.id);
-      await chrome.storage.local.set({ [CAPTURE_STATE_KEY]: captureState });
+      await writeCaptureState(captureState);
       sendResponse({ ok: true });
       return;
     }
@@ -146,8 +243,23 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           return;
         }
 
+        const injected = await injectCaptureScanner(activeTabId);
+        if (!injected) {
+          sendResponse({ ok: false, count: 0, tabId: activeTabId, reason: 'injection_failed' });
+          return;
+        }
+
         const result = await chrome.tabs.sendMessage(activeTabId, { type: 'capture:scanPage' });
-        sendResponse({ ok: true, count: result?.count || 0, tabId: activeTabId });
+        sendResponse({
+          ok: result != null && result.ok !== false,
+          count: result?.count ?? 0,
+          foundCount: result?.foundCount,
+          quotaFailures: result?.quotaFailures,
+          scanLimited: result?.scanLimited,
+          pageTooLarge: result?.pageTooLarge,
+          tabId: activeTabId,
+          reason: result?.reason
+        });
       } catch (err) {
         const message = String(err?.message || '');
         const reason = /Cannot access|Missing host permission|moz-extension|about:/i.test(message)

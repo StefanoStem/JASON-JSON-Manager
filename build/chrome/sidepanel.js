@@ -858,13 +858,40 @@ async function runCaptureScan() {
         captureDetailMeta.textContent = 'Scan needs confirmation before it can run. Try Run Scan again.';
       } else if (scanRes?.reason === 'injection_failed') {
         captureDetailMeta.textContent = 'Scan could not read this page. Refresh the page and try Run Scan again.';
+      } else if (scanRes?.reason === 'quota_exceeded') {
+        captureDetailMeta.textContent = 'Scan could not save results because extension storage is full. Clear older captures or other saved data and try again.';
       } else {
         captureDetailMeta.textContent = 'Scan did not complete. Refresh the page and try Run Scan again.';
       }
-    } else if ((scanRes?.count || 0) === 0 && captureItems.length <= initialCount) {
-      captureDetailMeta.textContent = 'Scan completed. No JSON blocks were found. Try refreshing this page and run scan again.';
-    } else if ((scanRes?.count || 0) > 0) {
-      captureDetailMeta.textContent = `Scan completed. Found ${scanRes.count} item${scanRes.count === 1 ? '' : 's'}.`;
+    } else {
+      const stored = typeof scanRes.count === 'number' ? scanRes.count : 0;
+      const found = typeof scanRes.foundCount === 'number' ? scanRes.foundCount : stored;
+      const quotaFailures = typeof scanRes.quotaFailures === 'number' ? scanRes.quotaFailures : 0;
+      const parts = [];
+      if (scanRes.pageTooLarge) {
+        parts.push('This page is very large, so only the first segment of text was scanned.');
+      }
+      if (scanRes.scanLimited) {
+        parts.push('The scan stopped early because of safety limits; some JSON on the page may have been skipped.');
+      }
+      if (quotaFailures > 0) {
+        parts.push(`${quotaFailures} block${quotaFailures === 1 ? '' : 's'} could not be saved (storage quota).`);
+      }
+      if (stored < found && quotaFailures === 0) {
+        parts.push(`Found ${found} JSON block${found === 1 ? '' : 's'} but only stored ${stored}.`);
+      }
+      if (stored > 0) {
+        parts.push(`Stored ${stored} capture${stored === 1 ? '' : 's'}.`);
+      } else if (found > 0 && stored === 0) {
+        parts.push(`Found ${found} JSON block${found === 1 ? '' : 's'} but none could be stored.`);
+      }
+      if (parts.length > 0) {
+        captureDetailMeta.textContent = parts.join(' ');
+      } else if (stored === 0 && found === 0) {
+        captureDetailMeta.textContent = 'Scan completed. No JSON blocks were found. Try refreshing this page and run scan again.';
+      } else {
+        captureDetailMeta.textContent = `Scan completed. Found ${found} item${found === 1 ? '' : 's'}.`;
+      }
     }
   } finally {
     const elapsed = Date.now() - startedAt;
@@ -2228,8 +2255,41 @@ function onFoldGutterClick(e) {
 
 // ─── Drop zone ──────────────────────────────────────────────
 
+/**
+ * Store paste/drop should only apply on the Store (single-tab) editing surface,
+ * not on search, form controls, Compare editors, Capture UI, or other contenteditable regions.
+ */
+function elementFromEventTarget(target) {
+  if (!target) return null;
+  if (target.nodeType === Node.ELEMENT_NODE) return target;
+  return target.parentElement;
+}
+
+function isExcludedStorePasteDropTarget(target) {
+  const el = elementFromEventTarget(target);
+  if (!el) return true;
+  if (el.closest('input, textarea, select, button')) return true;
+  if (el.getAttribute('type') === 'search' || el.closest('[type="search"]')) return true;
+  if (el.closest('[role="searchbox"]')) return true;
+  if (sidebarSearch && (el === sidebarSearch || sidebarSearch.contains(el))) return true;
+  if (compareLeftInput && (el === compareLeftInput || compareLeftInput.contains(el))) return true;
+  if (compareRightInput && (el === compareRightInput || compareRightInput.contains(el))) return true;
+  if (capturePanel && (el === capturePanel || capturePanel.contains(el))) return true;
+  const ceHost = el.closest('[contenteditable="true"]');
+  if (ceHost && !editor.contains(ceHost)) return true;
+  if (!contentArea.contains(el) && el !== contentArea) return true;
+  return false;
+}
+
+function shouldHandleStorePasteDrop(target) {
+  if (uiMode !== 'editor') return false;
+  if (isExcludedStorePasteDropTarget(target)) return false;
+  return true;
+}
+
 function setupDropZone(el) {
   el.addEventListener('dragover', (e) => {
+    if (!shouldHandleStorePasteDrop(e.target)) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = 'copy';
     el.classList.add('drag-over');
@@ -2238,6 +2298,7 @@ function setupDropZone(el) {
     if (!el.contains(e.relatedTarget)) el.classList.remove('drag-over');
   });
   el.addEventListener('drop', (e) => {
+    if (!shouldHandleStorePasteDrop(e.target)) return;
     e.preventDefault();
     el.classList.remove('drag-over');
     const text = e.dataTransfer.getData('text/plain');
@@ -2273,6 +2334,8 @@ function onGlobalPaste(e) {
 
   // If paste is inside the editor, the editor's own paste handler deals with it
   if (editor.contains(e.target)) return;
+
+  if (!shouldHandleStorePasteDrop(e.target)) return;
 
   const text = e.clipboardData?.getData('text/plain');
   if (text) {
