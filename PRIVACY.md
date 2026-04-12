@@ -6,7 +6,7 @@ JASON does not collect, transmit, or share any data with external services. All 
 
 - **No analytics or tracking**
 - **No third-party services**
-- **Optional local capture only:** when triggered by you via **Run Scan**, JASON inspects JSON-like content already present in the current page (via an injected `content-capture.js` helper that reads `script`, `pre`, `code`, and body text where needed) so it can be viewed in the sidebar.
+- **Optional local capture only:** when triggered by you via **Run Scan**, JASON inspects JSON-like content already present in the current page so it can be viewed in the sidebar. No data leaves your browser.
 - **Capture retention:** capture items are scoped to the current tab context and remain local until you clear them, switch tabs, close the tab, or the tab navigates to a different page.
 
 ### Permissions used
@@ -16,7 +16,7 @@ JASON does not collect, transmit, or share any data with external services. All 
 | `storage` | Save your snippets and tab names locally between sessions |
 | `sidePanel` / `sidebar` | Display the editor in the browser sidebar |
 | `tabs` | Resolve the active tab so capture can be enabled/queried per tab |
-| `host_permissions` / `<all_urls>` + `content-capture.js` | **Chrome:** declared host access and a content script so **Run Scan** can inspect JSON-like content in the live page. **Firefox:** `<all_urls>` in permissions with the same script. Scan still runs only when you click **Run Scan**; the extension does not fetch arbitrary URLs from the background. |
+| Host access (`<all_urls>`) | Allow **Run Scan** to read JSON-like content from the current page. Scan runs only when you click **Run Scan**; JASON does not access pages in the background or send data anywhere. |
 
 ### Responsible use
 
