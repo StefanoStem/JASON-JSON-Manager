@@ -13,7 +13,7 @@
   /** Abort balanced read if this many character visits is exceeded (prevents freezes). */
   const MAX_BRACE_WALK_OPS = 250000;
 
-  function readBalancedJson(text, startIndex, maxOps) {
+  function readBalancedJson(text, startIndex, maxOps, meta) {
     const startChar = text[startIndex];
     const endChar = startChar === '{' ? '}' : startChar === '[' ? ']' : '';
     if (!endChar) return null;
@@ -24,7 +24,7 @@
     let ops = 0;
 
     for (let i = startIndex; i < text.length; i++) {
-      if (++ops > maxOps) return null;
+      if (++ops > maxOps) { if (meta) meta.scanLimited = true; return null; }
       const ch = text[i];
       if (inString) {
         if (escaped) {
@@ -72,9 +72,10 @@
    * Single linear pass: after a balanced candidate fails to parse, advance by one
    * instead of re-walking from every prior offset inside the same span.
    */
-  function extractFirstJsonSinglePass(raw, scanLimit) {
+  function extractFirstJsonSinglePass(raw, scanLimit, meta) {
     const text = String(raw || '');
     const limit = Math.min(text.length, scanLimit);
+    if (limit < text.length && meta) meta.scanLimited = true;
     let i = 0;
     while (i < limit) {
       const ch = text[i];
@@ -82,7 +83,7 @@
         i++;
         continue;
       }
-      const snippet = readBalancedJson(text, i, MAX_BRACE_WALK_OPS);
+      const snippet = readBalancedJson(text, i, MAX_BRACE_WALK_OPS, meta);
       if (!snippet) {
         i++;
         continue;
@@ -104,7 +105,7 @@
 
     const quick = quickTryParse(slice);
     if (quick) return quick;
-    return extractFirstJsonSinglePass(slice, MAX_FALLBACK_SCAN_LEN);
+    return extractFirstJsonSinglePass(slice, MAX_FALLBACK_SCAN_LEN, meta);
   }
 
   function normalizeBody(value) {
