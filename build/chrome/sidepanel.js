@@ -94,6 +94,7 @@ let currentBrowserTabId = null;
 let capturePollTimer = null;
 let selectedCaptureIds = [];
 let captureScanArmed = false;
+let cancelPendingConfirmation = null;
 
 function hasStorage() {
   return typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local;
@@ -172,7 +173,7 @@ function setMode(nextMode, options = {}) {
     captureModeBtn.classList.toggle('active', isCaptures);
   }
   if (!isCaptures) {
-    hideCaptureScanConfirm();
+    if (cancelPendingConfirmation) cancelPendingConfirmation();
     captureScanArmed = false;
   }
 
@@ -380,12 +381,8 @@ function applySearchHighlights() {
   highlightSearchInElement(tabsContainer, searchQuery);
   if (uiMode === 'editor') highlightSearchInElement(editorCode, searchQuery);
   if (uiMode === 'compare') {
-    if (compareLeftInput?.dataset.compareRendered !== 'true') {
-      highlightSearchInElement(compareLeftInput, searchQuery);
-    }
-    if (compareRightInput?.dataset.compareRendered !== 'true') {
-      highlightSearchInElement(compareRightInput, searchQuery);
-    }
+    highlightSearchInElement(compareLeftInput, searchQuery);
+    highlightSearchInElement(compareRightInput, searchQuery);
   }
   if (uiMode === 'captures') {
     highlightSearchInElement(captureList, searchQuery);
@@ -779,23 +776,30 @@ function hideCaptureScanConfirm() {
 }
 
 function askCaptureScanConfirmation() {
+  if (cancelPendingConfirmation) cancelPendingConfirmation();
+
   return new Promise((resolve) => {
     if (!captureScanConfirm || !captureScanConfirmYes || !captureScanConfirmNo) {
       resolve(false);
       return;
     }
 
+    let settled = false;
     const cleanup = () => {
+      settled = true;
+      cancelPendingConfirmation = null;
       captureScanConfirmYes.removeEventListener('click', onConfirm);
       captureScanConfirmNo.removeEventListener('click', onCancel);
       document.removeEventListener('keydown', onKeydown);
     };
     const onConfirm = () => {
+      if (settled) return;
       cleanup();
       hideCaptureScanConfirm();
       resolve(true);
     };
     const onCancel = () => {
+      if (settled) return;
       cleanup();
       hideCaptureScanConfirm();
       resolve(false);
@@ -804,6 +808,7 @@ function askCaptureScanConfirmation() {
       if (e.key === 'Escape') onCancel();
     };
 
+    cancelPendingConfirmation = onCancel;
     captureScanConfirm.classList.remove('hidden');
     captureScanConfirmYes.addEventListener('click', onConfirm, { once: true });
     captureScanConfirmNo.addEventListener('click', onCancel, { once: true });
@@ -1583,6 +1588,7 @@ function onEditorInput() {
     updateCollapseExpandButtons();
     clearTimeout(highlightTimer);
     highlightTimer = null;
+    clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => {
       if (activeTabId) {
         const tab = tabs.find((t) => t.id === activeTabId);
