@@ -380,8 +380,12 @@ function applySearchHighlights() {
   highlightSearchInElement(tabsContainer, searchQuery);
   if (uiMode === 'editor') highlightSearchInElement(editorCode, searchQuery);
   if (uiMode === 'compare') {
-    highlightSearchInElement(compareLeftInput, searchQuery);
-    highlightSearchInElement(compareRightInput, searchQuery);
+    if (compareLeftInput?.dataset.compareRendered !== 'true') {
+      highlightSearchInElement(compareLeftInput, searchQuery);
+    }
+    if (compareRightInput?.dataset.compareRendered !== 'true') {
+      highlightSearchInElement(compareRightInput, searchQuery);
+    }
   }
   if (uiMode === 'captures') {
     highlightSearchInElement(captureList, searchQuery);
@@ -615,10 +619,16 @@ async function storeSelectedCapturesToTabs() {
     .filter(Boolean);
   if (selectedItems.length === 0) return;
 
+  let stored = 0;
   for (const item of selectedItems) {
+    if (tabs.length >= MAX_TABS) break;
     const text = normalizeJsonText(item.prettyBody || item.body || '');
     if (!text) continue;
     await addTab(text);
+    stored++;
+  }
+  if (stored < selectedItems.length && captureDetailMeta) {
+    captureDetailMeta.textContent = `Stored ${stored} of ${selectedItems.length} captures (tab limit reached).`;
   }
   setMode('editor');
 }
@@ -771,13 +781,14 @@ function hideCaptureScanConfirm() {
 function askCaptureScanConfirmation() {
   return new Promise((resolve) => {
     if (!captureScanConfirm || !captureScanConfirmYes || !captureScanConfirmNo) {
-      resolve(true);
+      resolve(false);
       return;
     }
 
     const cleanup = () => {
       captureScanConfirmYes.removeEventListener('click', onConfirm);
       captureScanConfirmNo.removeEventListener('click', onCancel);
+      document.removeEventListener('keydown', onKeydown);
     };
     const onConfirm = () => {
       cleanup();
@@ -789,10 +800,14 @@ function askCaptureScanConfirmation() {
       hideCaptureScanConfirm();
       resolve(false);
     };
+    const onKeydown = (e) => {
+      if (e.key === 'Escape') onCancel();
+    };
 
     captureScanConfirm.classList.remove('hidden');
     captureScanConfirmYes.addEventListener('click', onConfirm, { once: true });
     captureScanConfirmNo.addEventListener('click', onCancel, { once: true });
+    document.addEventListener('keydown', onKeydown);
     captureScanConfirmYes.focus();
   });
 }
@@ -2508,7 +2523,12 @@ async function init() {
     }
   }
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden') saveBeforeClose();
+    if (document.visibilityState === 'hidden') {
+      saveBeforeClose();
+    } else if (document.visibilityState === 'visible' && uiMode === 'captures') {
+      startCapturePolling();
+      refreshCaptures();
+    }
   });
   window.addEventListener('pagehide', saveBeforeClose);
   window.addEventListener('beforeunload', saveBeforeClose);

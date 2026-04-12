@@ -60,6 +60,23 @@ async function clearCapturesForTab(tabId) {
   chrome.runtime.sendMessage({ type: 'capture:updated', tabId }).catch(() => {});
 }
 
+function isRestrictedPageUrl(url) {
+  if (typeof url !== 'string' || !url) return true;
+  return (
+    url.startsWith('chrome://')
+    || url.startsWith('chrome-extension://')
+    || url.startsWith('moz-extension://')
+    || url.startsWith('devtools://')
+    || url.startsWith('about:')
+    || url.startsWith('view-source:')
+    || url.startsWith('edge://')
+    || url.startsWith('brave://')
+    || url.startsWith('vivaldi://')
+    || url.startsWith('file:')
+    || url.startsWith('data:')
+  );
+}
+
 // Persist tabs and handle capture routing
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   (async () => {
@@ -121,11 +138,22 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         sendResponse({ ok: false, count: 0, tabId: activeTabId, reason: 'confirmation_required' });
         return;
       }
+
       try {
+        const tab = await chrome.tabs.get(activeTabId);
+        if (isRestrictedPageUrl(tab?.url || '')) {
+          sendResponse({ ok: false, count: 0, tabId: activeTabId, reason: 'restricted_page' });
+          return;
+        }
+
         const result = await chrome.tabs.sendMessage(activeTabId, { type: 'capture:scanPage' });
         sendResponse({ ok: true, count: result?.count || 0, tabId: activeTabId });
-      } catch (_) {
-        sendResponse({ ok: false, count: 0, tabId: activeTabId });
+      } catch (err) {
+        const message = String(err?.message || '');
+        const reason = /Cannot access|Missing host permission|moz-extension|about:/i.test(message)
+          ? 'restricted_page'
+          : 'injection_failed';
+        sendResponse({ ok: false, count: 0, tabId: activeTabId, reason });
       }
       return;
     }
@@ -135,6 +163,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       sendResponse({ ok: true });
       return;
     }
+
+    sendResponse({ ok: false, reason: 'unknown_message' });
   })().catch((err) => {
     console.error('Background message handler error:', err);
     sendResponse({ ok: false });

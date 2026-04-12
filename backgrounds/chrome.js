@@ -73,6 +73,10 @@ function isRestrictedPageUrl(url) {
     || url.startsWith('about:')
     || url.startsWith('view-source:')
     || url.startsWith('edge://')
+    || url.startsWith('brave://')
+    || url.startsWith('vivaldi://')
+    || url.startsWith('file:')
+    || url.startsWith('data:')
   );
 }
 
@@ -163,6 +167,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       sendResponse({ ok: true });
       return;
     }
+
+    sendResponse({ ok: false, reason: 'unknown_message' });
   })().catch((err) => {
     console.error('Background message handler error:', err);
     sendResponse({ ok: false });

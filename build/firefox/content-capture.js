@@ -1,6 +1,10 @@
 (() => {
+  if (globalThis.__jasonCaptureLoaded) return;
+  globalThis.__jasonCaptureLoaded = true;
+
   const MAX_SCAN_ITEMS = 12;
   const MAX_TEXT_LEN = 120000;
+  const MAX_FALLBACK_SCAN_LEN = 500000;
 
   function readBalancedJson(text, startIndex) {
     const startChar = text[startIndex];
@@ -55,7 +59,8 @@
     }
 
     // Fallback: extract the first balanced JSON object/array from mixed text.
-    for (let i = 0; i < raw.length; i++) {
+    const scanLimit = Math.min(raw.length, MAX_FALLBACK_SCAN_LEN);
+    for (let i = 0; i < scanLimit; i++) {
       const ch = raw[i];
       if (ch !== '{' && ch !== '[') continue;
       const snippet = readBalancedJson(raw, i);
@@ -69,7 +74,8 @@
 
   function normalizeBody(value) {
     const text = typeof value === 'string' ? value : JSON.stringify(value);
-    return text.length > MAX_TEXT_LEN ? text.slice(0, MAX_TEXT_LEN) : text;
+    if (text.length <= MAX_TEXT_LEN) return { body: text, truncated: false };
+    return { body: text.slice(0, MAX_TEXT_LEN), truncated: true };
   }
 
   function collectPageJson() {
@@ -87,15 +93,15 @@
       if (out.length >= MAX_SCAN_ITEMS) break;
       const parsed = parseCandidate(node.textContent || '');
       if (!parsed) continue;
-      const body = normalizeBody(JSON.stringify(parsed));
-      if (seen.has(body)) continue;
-      seen.add(body);
+      const normalized = normalizeBody(JSON.stringify(parsed));
+      if (seen.has(normalized.body)) continue;
+      seen.add(normalized.body);
       out.push({
         method: 'SCAN',
         url: location.href,
         status: 200,
-        contentType: 'application/json',
-        body,
+        contentType: normalized.truncated ? 'application/json; truncated' : 'application/json',
+        body: normalized.body,
         ts: Date.now()
       });
     }
